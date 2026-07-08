@@ -1,38 +1,32 @@
 import datetime
 import gspread
 import streamlit as st
+from google.oauth2.service_account import Credentials
 
 # --- CONFIGURAÇÃO DA GOOGLE SHEET ---
-LINK_PLANILHA = "https://docs.google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En0FEYfpVs-58e9S0"
+LINK_PLANILHA = "docs.google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En0FEYfpVs-58e9S0"
 NOME_DA_ABA = "controle"
 
-# Configuração visual e profissional da página web
-st.set_page_config(
-    page_title="Portal de Status - Logística",
-    page_icon="📦",
-    layout="centered"
-)
+st.set_page_config(page_title="Portal de Status - Logística", page_icon="📦", layout="centered")
 
-# Injeção de CSS Profissional para customizar as cores e deixar o visual corporativo
 st.markdown("""
     <style>
-        /* Altera a cor de fundo principal para um tom cinza claro corporativo */
-        .stApp {
-            background-color: #f8f9fa;
-        }
-        /* Customiza as caixas de informações complementares */
-        .stAlert {
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
+        .stApp { background-color: #f8f9fa; }
+        .stAlert { border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     </style>
 """, unsafe_allow_html=True)
 
 @st.cache_resource
 def conectar_google_sheets():
-    # Na nuvem, puxamos as credenciais de forma oculta e segura via dicionário de Secrets
+    # Define os escopos necessários para a API de nuvem
+    escopos = [
+        "https://googleapis.com",
+        "https://googleapis.com"
+    ]
+    # Puxa o dicionário de chaves da Conta de Serviço oculto nos Secrets do Streamlit
     dados_credenciais = dict(st.secrets["gspread_credentials"])
-    cliente = gspread.oauth_from_dict(dados_credenciais)
+    credenciais = Credentials.from_service_account_info(dados_credenciais, scopes=escopos)
+    cliente = gspread.authorize(credenciais)
     planilha = cliente.open_by_url(LINK_PLANILHA)
     return planilha.worksheet(NOME_DA_ABA)
 
@@ -99,7 +93,6 @@ def calcular_fluxo_status(linha):
         }
     }
 
-# --- INTERFACE VISUAL DO PORTAL ---
 st.title("📦 Portal de Status de Pedidos")
 st.write("Insira o número da Nota Fiscal para verificar o fluxo do processo em tempo real.")
 
