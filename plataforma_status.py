@@ -10,7 +10,7 @@ NOME_DA_ABA = "controle"
 # Configuração da página web do Streamlit
 st.set_page_config(page_title="Portal de Status - Logística", page_icon="📦", layout="centered")
 
-# Estilização CSS avançada para o Stepper e centralização de cartões customizados
+# Estilização CSS avançada para o Stepper e fontes padronizadas
 st.markdown("""
     <style>
         .stApp { background-color: #f8f9fa; }
@@ -80,30 +80,6 @@ st.markdown("""
             background-color: #2ec866;
             z-index: 1;
             transition: width 0.5s ease;
-        }
-
-        /* Estilização para o bloco centralizado de Transportadora */
-        .transportador-box {
-            background-color: #ffffff;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 15px;
-            text-align: center;
-            margin-top: 15px;
-            margin-bottom: 15px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-        }
-        .transportador-title {
-            font-size: 14px;
-            color: #555555;
-            margin-bottom: 5px;
-            font-weight: 500;
-        }
-        .transportador-value {
-            font-size: 20px;
-            color: #1e3d59;
-            font-weight: bold;
-            word-wrap: break-word;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -191,7 +167,7 @@ if pesquisa:
     pedido_encontrado = None
     for linha in linhas_pedidos:
         if len(linha) > 4:
-            nf_numero = str(linha[4]).strip()
+            nf_numero = str(linha).strip()
             if pesquisa == nf_numero:
                 pedido_encontrado = linha
                 break
@@ -249,14 +225,8 @@ if pesquisa:
         with col3:
             st.metric(label="Modalidade de Frete", value=cards["Incoterm"])
             
-        # --- LINHA 2 (Exclusiva e Expandida para o Contato) ---
-        html_transportador = f"""
-        <div class="transportador-box">
-            <div class="transportador-title">Transportador / Contato Completo</div>
-            <div class="transportador-value">{cards['Transportador']}</div>
-        </div>
-        """
-        st.markdown(html_transportador, unsafe_allow_html=True)
+        # --- LINHA 2 (Usa o componente nativo st.metric ocupando uma linha cheia) ---
+        st.metric(label="Transportador / Contato Completo", value=cards["Transportador"])
         
         # --- LINHA 3 ---
         col_inf1, col_inf2 = st.columns(2)
@@ -270,3 +240,4 @@ if pesquisa:
     else:
         st.warning(f"Nenhuma Nota Fiscal localizada com o número: '{pesquisa}'")
 
+st.markdown("<br><br><p style='text-align: right; color: gray; font-style: italic; font-size: 12px;'>Desenvolvido por Diego Elvis | Versão R.1.0 de 06.07</p>", unsafe_allow_html=True)
