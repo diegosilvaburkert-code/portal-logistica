@@ -2,11 +2,13 @@ import datetime
 import gspread
 import streamlit as st
 from google.oauth2.service_account import Credentials
+import json
 
 # --- CONFIGURAÇÃO DA GOOGLE SHEET ---
-LINK_PLANILHA = "docs.google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En0FEYfpVs-58e9S0"
+LINK_PLANILHA = "https://docs.google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En0FEYfpVs-58e9S0"
 NOME_DA_ABA = "controle"
 
+# Configuração da página web do Streamlit
 st.set_page_config(page_title="Portal de Status - Logística", page_icon="📦", layout="centered")
 
 st.markdown("""
@@ -18,14 +20,13 @@ st.markdown("""
 
 @st.cache_resource
 def conectar_google_sheets():
-    # Define os escopos necessários para a API de nuvem
     escopos = [
         "https://googleapis.com",
         "https://googleapis.com"
     ]
-    # Puxa o dicionário de chaves da Conta de Serviço oculto nos Secrets do Streamlit
-    dados_credenciais = dict(st.secrets["gspread_credentials"])
-    credenciais = Credentials.from_service_account_info(dados_credenciais, scopes=escopos)
+    # Carrega o JSON inteiro de forma limpa sem quebrar a criptografia da chave
+    info_chave = json.loads(st.secrets["gspread_credentials"]["json_string"])
+    credenciais = Credentials.from_service_account_info(info_chave, scopes=escopos)
     cliente = gspread.authorize(credenciais)
     planilha = cliente.open_by_url(LINK_PLANILHA)
     return planilha.worksheet(NOME_DA_ABA)
@@ -109,7 +110,7 @@ pesquisa = st.text_input("Digite o número exato da Nota Fiscal:", placeholder="
 
 if pesquisa:
     pedido_encontrado = None
-    for linha in linhas_pedidos:
+    for [linha] in [linhas_pedidos]:
         nf_numero = str(linha).strip() if len(linha) > 4 else ""
         if pesquisa == nf_numero:
             pedido_encontrado = linha
