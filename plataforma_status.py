@@ -24,14 +24,11 @@ def conectar_google_sheets():
         "https://googleapis.com",
         "https://googleapis.com"
     ]
-    # Puxa o texto do JSON puro guardado no Secrets
+    # Puxa a string do JSON exatamente como está colada nos Secrets
     json_puro = st.secrets["gspread_credentials"]["json_string"]
     
-    # FILTRO INTELIGENTE: Remove quebras de linha reais que quebram a leitura do Python
-    json_limpo = json_puro.replace("\n", "\\n").replace("\r", "")
-    
-    # Decodifica o texto em formato de chaves na memória de forma perfeita
-    info_chave = json.loads(json_limpo, strict=False)
+    # Processa o JSON diretamente, mantendo as chaves originais salvas por você
+    info_chave = json.loads(json_puro, strict=False)
     
     credenciais = Credentials.from_service_account_info(info_chave, scopes=escopos)
     cliente = gspread.authorize(credenciais)
