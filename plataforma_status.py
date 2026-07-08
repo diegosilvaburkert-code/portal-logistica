@@ -155,6 +155,7 @@ st.write("Insira o número da Nota Fiscal para verificar o fluxo do processo em 
 try:
     aba_planilha = conectar_google_sheets()
     todos_dados = aba_planilha.get_all_values()
+    # Remove as linhas vazias do final da planilha para otimizar o loop
     linhas_pedidos = [l for l in todos_dados[1:] if any(l)]
     st.success("Conexão estabelecida com a base de dados Logística 2026!")
 except Exception as e:
@@ -166,8 +167,9 @@ pesquisa = st.text_input("Digite o número exato da Nota Fiscal:", placeholder="
 if pesquisa:
     pedido_encontrado = None
     for linha in linhas_pedidos:
+        # CORRIGIDO: Força o Python a ler estritamente o índice 4 (Coluna E da Planilha)
         if len(linha) > 4:
-            nf_numero = str(linha).strip()
+            nf_numero = str(linha[4]).strip()
             if pesquisa == nf_numero:
                 pedido_encontrado = linha
                 break
