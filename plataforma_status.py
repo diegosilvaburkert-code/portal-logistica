@@ -24,8 +24,15 @@ def conectar_google_sheets():
         "https://googleapis.com",
         "https://googleapis.com"
     ]
-    # Carrega o JSON inteiro de forma limpa sem quebrar a criptografia da chave
-    info_chave = json.loads(st.secrets["gspread_credentials"]["json_string"])
+    # Puxa o texto do JSON puro guardado no Secrets
+    json_puro = st.secrets["gspread_credentials"]["json_string"]
+    
+    # FILTRO INTELIGENTE: Remove quebras de linha reais que quebram a leitura do Python
+    json_limpo = json_puro.replace("\n", "\\n").replace("\r", "")
+    
+    # Decodifica o texto em formato de chaves na memória de forma perfeita
+    info_chave = json.loads(json_limpo, strict=False)
+    
     credenciais = Credentials.from_service_account_info(info_chave, scopes=escopos)
     cliente = gspread.authorize(credenciais)
     planilha = cliente.open_by_url(LINK_PLANILHA)
@@ -110,8 +117,8 @@ pesquisa = st.text_input("Digite o número exato da Nota Fiscal:", placeholder="
 
 if pesquisa:
     pedido_encontrado = None
-    for [linha] in [linhas_pedidos]:
-        nf_numero = str(linha).strip() if len(linha) > 4 else ""
+    for linha in linhas_pedidos:
+        nf_numero = str(linha[4]).strip() if len(linha) > 4 else ""
         if pesquisa == nf_numero:
             pedido_encontrado = linha
             break
