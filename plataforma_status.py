@@ -10,10 +10,81 @@ NOME_DA_ABA = "controle"
 # Configuração da página web do Streamlit
 st.set_page_config(page_title="Portal de Status - Logística", page_icon="📦", layout="centered")
 
+# Estilização CSS avançada para injetar o painel horizontal de progresso (Stepper)
 st.markdown("""
     <style>
         .stApp { background-color: #f8f9fa; }
         .stAlert { border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        
+        /* Estrutura do Painel Horizontal de Etapas */
+        .stepper-wrapper {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+            margin-bottom: 30px;
+            position: relative;
+        }
+        .stepper-wrapper::before {
+            content: "";
+            position: absolute;
+            top: 25px;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background-color: #e0e0e0;
+            z-index: 1;
+        }
+        .stepper-item {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            z-index: 2;
+        }
+        .stepper-item .step-counter {
+            position: relative;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #e0e0e0;
+            border-radius: 50%;
+            font-weight: bold;
+            color: #ffffff;
+            font-size: 18px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .stepper-item .step-name {
+            margin-top: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #888888;
+            text-align: center;
+        }
+        
+        /* Estados Ativos / Concluídos (Verde Industrial) */
+        .stepper-item.completed .step-counter {
+            background-color: #2ec866;
+            color: white;
+        }
+        .stepper-item.completed .step-name {
+            color: #2ec866;
+            font-weight: bold;
+        }
+        
+        /* Linha de conexão verde ativa */
+        .stepper-line-active {
+            position: absolute;
+            top: 25px;
+            left: 0;
+            height: 4px;
+            background-color: #2ec866;
+            z-index: 1;
+            transition: width 0.5s ease;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -42,40 +113,35 @@ def calcular_fluxo_status(linha):
 
     transportador_valido = transportador and transportador != "-"
 
-    fases = {
-        "Fase 1: Aguardando Separação": "🔴 Pendente",
-        "Fase 2: Faturado (N.F. Gerada)": "🔴 Pendente",
-        "Fase 3: Coleta Solicitada": "🔴 Pendente",
-        "Fase 4: Coleta Efetivada": "🔴 Pendente"
-    }
-    
+    # Mapeamento numérico para calcular o tamanho da barra de progresso horizontal
+    etapa_atingida = 0 
     status_atual = "⚪ Aguardando Processamento"
     detalhe_operacional = "Pedido registrado, aguardando início da separação."
 
     if cliente:
-        fases["Fase 1: Aguardando Separação"] = "🟢 Concluído"
+        etapa_atingida = 1
         status_atual = "🟠 Em Separação / Embalagem"
         detalhe_operacional = f"Pedido em separação técnica. Responsável pela ação: {responsavel if responsavel else 'Não informado'}."
 
     if nf and nf != "None" and nf != "":
-        fases["Fase 2: Faturado (N.F. Gerada)"] = "🟢 Concluído"
+        etapa_atingida = 2
         status_atual = "🟡 Faturado"
         detalhe_operacional = f"Nota Fiscal {nf} emitida. Aguardando agendamento ou contato do transportador."
 
     if coleta and coleta != "None" and coleta != "":
-        fases["Fase 3: Coleta Solicitada"] = "🟢 Concluído"
+        etapa_atingida = 3
         status_atual = "🔵 Coleta Solicitada"
         detalhe_operacional = f"Solicitação realizada sob o registro/contato: '{coleta}'."
 
     if data_col and data_col != "None" and data_col != "":
-        fases["Fase 4: Coleta Efetivada"] = "🟢 Concluído"
+        etapa_atingida = 4
         status_atual = "🟢 Coleta Efetivada"
         detalhe_operacional = f"Material coletado e retirado da expedição física em: {data_col}."
 
     return {
+        "etapa_atingida": etapa_atingida,
         "status_atual": status_atual,
         "detalhe": detalhe_operacional,
-        "fases": fases,
         "detalhes_card": {
             "Cliente": cliente,
             "N.F.": nf,
@@ -94,7 +160,6 @@ st.write("Insira o número da Nota Fiscal para verificar o fluxo do processo em 
 try:
     aba_planilha = conectar_google_sheets()
     todos_dados = aba_planilha.get_all_values()
-    # Filtra e remove linhas que estejam completamente vazias para evitar erros de busca
     linhas_pedidos = [l for l in todos_dados[1:] if any(l)]
     st.success("Conexão estabelecida com a base de dados Logística 2026!")
 except Exception as e:
@@ -106,27 +171,55 @@ pesquisa = st.text_input("Digite o número exato da Nota Fiscal:", placeholder="
 if pesquisa:
     pedido_encontrado = None
     for linha in linhas_pedidos:
-        # CORRIGIDO: Força o Python a olhar estritamente para o índice 4 (Coluna E - N.F.)
         if len(linha) > 4:
             nf_numero = str(linha[4]).strip()
             if pesquisa == nf_numero:
-                pedido_encontrado = float_to_str = linha
+                pedido_encontrado = linha
                 break
             
     if pedido_encontrado:
         info = calcular_fluxo_status(pedido_encontrado)
         cards = info["detalhes_card"]
+        num_etapa = info["etapa_atingida"]
         
         st.markdown(f"## 📋 Cliente: {cards['Cliente']}")
         st.markdown(f"### Status Atual: {info['status_atual']}")
         st.info(info["detalhe"])
         
-        st.markdown("### ⏳ Linha do Tempo do Processo:")
-        for fase, situacao in info["fases"].items():
-            if "🟢" in situacao:
-                st.markdown(f"**{fase}** | {situacao}")
-            else:
-                st.markdown(f"<span style='color: gray;'>**{fase}** | {situacao}</span>", unsafe_allow_html=True)
+        # --- DESENHO DO PAINEL HORIZONTAL DE PROGRESSO (ESTILO ESI CLOUD) ---
+        st.markdown("### ⏳ Fluxo do Processo:")
+        
+        # Calcula a largura da linha verde com base na etapa atual
+        largura_linha_verde = "0%"
+        if num_etapa == 2: largura_linha_verde = "33%"
+        elif num_etapa == 3: largura_linha_verde = "66%"
+        elif num_etapa == 4: largura_linha_verde = "100%"
+        
+        # Injeta o HTML estruturado do componente dinâmico
+        html_stepper = f"""
+        <div style="position: relative;">
+            <div class="stepper-line-active" style="width: {largura_linha_verde};"></div>
+            <div class="stepper-wrapper">
+                <div class="stepper-item {'completed' if num_etapa >= 1 else ''}">
+                    <div class="step-counter">✓</div>
+                    <div class="step-name">Em Separação</div>
+                </div>
+                <div class="stepper-item {'completed' if num_etapa >= 2 else ''}">
+                    <div class="step-counter">✓</div>
+                    <div class="step-name">Faturado</div>
+                </div>
+                <div class="stepper-item {'completed' if num_etapa >= 3 else ''}">
+                    <div class="step-counter">✓</div>
+                    <div class="step-name">Coleta Solicitada</div>
+                </div>
+                <div class="stepper-item {'completed' if num_etapa >= 4 else ''}">
+                    <div class="step-counter">✓</div>
+                    <div class="step-name">Coleta Efetivada</div>
+                </div>
+            </div>
+        </div>
+        """
+        st.markdown(html_stepper, unsafe_allow_html=True)
         
         st.markdown("---")
         st.markdown("### 🔍 Detalhes do Pedido:")
