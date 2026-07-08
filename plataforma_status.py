@@ -1,7 +1,6 @@
 import datetime
 import gspread
 import streamlit as st
-from google.oauth2.service_account import Credentials
 import json
 
 # --- CONFIGURAÇÃO DA GOOGLE SHEET ---
@@ -20,18 +19,12 @@ st.markdown("""
 
 @st.cache_resource
 def conectar_google_sheets():
-    escopos = [
-        "https://googleapis.com",
-        "https://googleapis.com"
-    ]
-    # Puxa a string do JSON exatamente como está colada nos Secrets
-    json_puro = st.secrets["gspread_credentials"]["json_string"]
+    # Usa o decodificador nativo simplificado do gspread para ler a string do Secrets
+    info_json = st.secrets["gspread_credentials"]["json_string"]
+    dic_chaves = json.loads(info_json, strict=False)
     
-    # Processa o JSON diretamente, mantendo as chaves originais salvas por você
-    info_chave = json.loads(json_puro, strict=False)
-    
-    credenciais = Credentials.from_service_account_info(info_chave, scopes=escopos)
-    cliente = gspread.authorize(credenciais)
+    # Faz a autenticação direta via Conta de Serviço usando o gspread moderno
+    cliente = gspread.service_account_from_dict(dic_chaves)
     planilha = cliente.open_by_url(LINK_PLANILHA)
     return planilha.worksheet(NOME_DA_ABA)
 
@@ -115,7 +108,7 @@ pesquisa = st.text_input("Digite o número exato da Nota Fiscal:", placeholder="
 if pesquisa:
     pedido_encontrado = None
     for linha in linhas_pedidos:
-        nf_numero = str(linha[4]).strip() if len(linha) > 4 else ""
+        nf_numero = str(linha).strip() if len(linha) > 4 else ""
         if pesquisa == nf_numero:
             pedido_encontrado = linha
             break
