@@ -10,7 +10,7 @@ NOME_DA_ABA = "controle"
 # Configuração da página web do Streamlit
 st.set_page_config(page_title="Portal de Status - Logística", page_icon="📦", layout="centered")
 
-# Estilização CSS avançada para injetar o painel horizontal de progresso (Stepper)
+# Estilização CSS avançada para o Stepper e centralização de cartões customizados
 st.markdown("""
     <style>
         .stApp { background-color: #f8f9fa; }
@@ -64,8 +64,6 @@ st.markdown("""
             color: #888888;
             text-align: center;
         }
-        
-        /* Estados Ativos / Concluídos (Verde Industrial) */
         .stepper-item.completed .step-counter {
             background-color: #2ec866;
             color: white;
@@ -74,8 +72,6 @@ st.markdown("""
             color: #2ec866;
             font-weight: bold;
         }
-        
-        /* Linha de conexão verde ativa */
         .stepper-line-active {
             position: absolute;
             top: 25px;
@@ -84,6 +80,30 @@ st.markdown("""
             background-color: #2ec866;
             z-index: 1;
             transition: width 0.5s ease;
+        }
+
+        /* Estilização para o bloco centralizado de Transportadora */
+        .transportador-box {
+            background-color: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            margin-top: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+        .transportador-title {
+            font-size: 14px;
+            color: #555555;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        .transportador-value {
+            font-size: 20px;
+            color: #1e3d59;
+            font-weight: bold;
+            word-wrap: break-word;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -113,7 +133,6 @@ def calcular_fluxo_status(linha):
 
     transportador_valido = transportador and transportador != "-"
 
-    # Mapeamento numérico para calcular o tamanho da barra de progresso horizontal
     etapa_atingida = 0 
     status_atual = "⚪ Aguardando Processamento"
     detalhe_operacional = "Pedido registrado, aguardando início da separação."
@@ -170,7 +189,7 @@ pesquisa = st.text_input("Digite o número exato da Nota Fiscal:", placeholder="
 
 if pesquisa:
     pedido_encontrado = None
-    for linha in linhas_pedidos:
+    for linha in lines_pedidos:
         if len(linha) > 4:
             nf_numero = str(linha[4]).strip()
             if pesquisa == nf_numero:
@@ -186,16 +205,13 @@ if pesquisa:
         st.markdown(f"### Status Atual: {info['status_atual']}")
         st.info(info["detalhe"])
         
-        # --- DESENHO DO PAINEL HORIZONTAL DE PROGRESSO (ESTILO ESI CLOUD) ---
+        # --- PAINEL HORIZONTAL DE PROGRESSO ---
         st.markdown("### ⏳ Fluxo do Processo:")
-        
-        # Calcula a largura da linha verde com base na etapa atual
         largura_linha_verde = "0%"
         if num_etapa == 2: largura_linha_verde = "33%"
         elif num_etapa == 3: largura_linha_verde = "66%"
         elif num_etapa == 4: largura_linha_verde = "100%"
         
-        # Injeta o HTML estruturado do componente dinâmico
         html_stepper = f"""
         <div style="position: relative;">
             <div class="stepper-line-active" style="width: {largura_linha_verde};"></div>
@@ -224,15 +240,29 @@ if pesquisa:
         st.markdown("---")
         st.markdown("### 🔍 Detalhes do Pedido:")
         
+        # --- LINHA 1: Informações principais compactas ---
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric(label="Nota Fiscal", value=cards["N.F."])
-            st.metric(label="Modalidade de Frete", value=cards["Incoterm"])
         with col2:
-            st.metric(label="Transportador / Contato", value=cards["Transportador"])
-            st.metric(label="Natureza da Operação", value=cards["Operação"])
-        with col3:
             st.metric(label="Nº Coleta / Registro", value=cards["Coleta/Rastreio"])
+        with col3:
+            st.metric(label="Modalidade de Frete", value=cards["Incoterm"])
+            
+        # --- LINHA 2: Bloco exclusivo, amplo e centralizado para a transportadora completa ---
+        html_transportador = f"""
+        <div class="transportador-box">
+            <div class="transportador-title">Transportador / Contato Completo</div>
+            <div class="transportador-value">{cards['Transportador']}</div>
+        </div>
+        """
+        st.markdown(html_transportador, unsafe_allow_html=True)
+        
+        # --- LINHA 3: Dados complementares finais ---
+        col_inf1, col_inf2 = st.columns(2)
+        with col_inf1:
+            st.metric(label="Natureza da Operação", value=cards["Operação"])
+        with col_inf2:
             st.metric(label="Data do Contato", value=cards["Data Contato"])
             
         st.markdown("#### 💬 Mensagem / Observações Gerais (Coluna J):")
@@ -240,4 +270,3 @@ if pesquisa:
     else:
         st.warning(f"Nenhuma Nota Fiscal localizada com o número: '{pesquisa}'")
 
-st.markdown("<br><br><p style='text-align: right; color: gray; font-style: italic; font-size: 12px;'>Desenvolvido por Diego Elvis | Versão R.1.0 de 06.07</p>", unsafe_allow_html=True)
