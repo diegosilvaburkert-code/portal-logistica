@@ -19,11 +19,8 @@ st.markdown("""
 
 @st.cache_resource
 def conectar_google_sheets():
-    # Usa o decodificador nativo simplificado do gspread para ler a string do Secrets
     info_json = st.secrets["gspread_credentials"]["json_string"]
     dic_chaves = json.loads(info_json, strict=False)
-    
-    # Faz a autenticação direta via Conta de Serviço usando o gspread moderno
     cliente = gspread.service_account_from_dict(dic_chaves)
     planilha = cliente.open_by_url(LINK_PLANILHA)
     return planilha.worksheet(NOME_DA_ABA)
@@ -97,7 +94,8 @@ st.write("Insira o número da Nota Fiscal para verificar o fluxo do processo em 
 try:
     aba_planilha = conectar_google_sheets()
     todos_dados = aba_planilha.get_all_values()
-    linhas_pedidos = todos_dados[1:]
+    # Filtra e remove linhas que estejam completamente vazias para evitar erros de busca
+    linhas_pedidos = [l for l in todos_dados[1:] if any(l)]
     st.success("Conexão estabelecida com a base de dados Logística 2026!")
 except Exception as e:
     st.error(f"Erro ao conectar com a planilha: {e}")
@@ -108,10 +106,12 @@ pesquisa = st.text_input("Digite o número exato da Nota Fiscal:", placeholder="
 if pesquisa:
     pedido_encontrado = None
     for linha in linhas_pedidos:
-        nf_numero = str(linha).strip() if len(linha) > 4 else ""
-        if pesquisa == nf_numero:
-            pedido_encontrado = linha
-            break
+        # CORRIGIDO: Força o Python a olhar estritamente para o índice 4 (Coluna E - N.F.)
+        if len(linha) > 4:
+            nf_numero = str(linha[4]).strip()
+            if pesquisa == nf_numero:
+                pedido_encontrado = float_to_str = linha
+                break
             
     if pedido_encontrado:
         info = calcular_fluxo_status(pedido_encontrado)
