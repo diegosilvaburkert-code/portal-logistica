@@ -268,5 +268,7 @@ if pesquisa:
         st.markdown("#### 💬 Mensagem / Observações Gerais (Coluna J):")
         st.warning(cards["Observações"])
     else:
+
+        st.markdown("Desenvolvido por Diego Elvis | Versão R.1.0 de 06.07", unsafe_allow_html=True)
         st.warning(f"Nenhuma Nota Fiscal localizada com o número: '{pesquisa}'")
 
