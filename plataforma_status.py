@@ -189,7 +189,7 @@ pesquisa = st.text_input("Digite o número exato da Nota Fiscal:", placeholder="
 
 if pesquisa:
     pedido_encontrado = None
-    for linha in lines_pedidos:
+    for linha in linhas_pedidos:
         if len(linha) > 4:
             nf_numero = str(linha[4]).strip()
             if pesquisa == nf_numero:
@@ -240,7 +240,7 @@ if pesquisa:
         st.markdown("---")
         st.markdown("### 🔍 Detalhes do Pedido:")
         
-        # --- LINHA 1: Informações principais compactas ---
+        # --- LINHA 1 ---
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric(label="Nota Fiscal", value=cards["N.F."])
@@ -249,7 +249,7 @@ if pesquisa:
         with col3:
             st.metric(label="Modalidade de Frete", value=cards["Incoterm"])
             
-        # --- LINHA 2: Bloco exclusivo, amplo e centralizado para a transportadora completa ---
+        # --- LINHA 2 (Exclusiva e Expandida para o Contato) ---
         html_transportador = f"""
         <div class="transportador-box">
             <div class="transportador-title">Transportador / Contato Completo</div>
@@ -258,7 +258,7 @@ if pesquisa:
         """
         st.markdown(html_transportador, unsafe_allow_html=True)
         
-        # --- LINHA 3: Dados complementares finais ---
+        # --- LINHA 3 ---
         col_inf1, col_inf2 = st.columns(2)
         with col_inf1:
             st.metric(label="Natureza da Operação", value=cards["Operação"])
@@ -268,7 +268,5 @@ if pesquisa:
         st.markdown("#### 💬 Mensagem / Observações Gerais (Coluna J):")
         st.warning(cards["Observações"])
     else:
-
-        st.markdown("Desenvolvido por Diego Elvis | Versão R.1.0 de 06.07", unsafe_allow_html=True)
         st.warning(f"Nenhuma Nota Fiscal localizada com o número: '{pesquisa}'")
 
