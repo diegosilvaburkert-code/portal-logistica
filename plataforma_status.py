@@ -10,7 +10,7 @@ NOME_DA_ABA = "controle"
 # Configuração da página web do Streamlit
 st.set_page_config(page_title="Portal de Status - Logística", page_icon="📦", layout="centered")
 
-# Estilização CSS avançada (Identidade Visual da Empresa e Correção de Layout)
+# Estilização CSS avançada (Identidade Visual, Centralização Completa e Ajuste de Layout)
 st.markdown("""
     <style>
         /* 1. Alteração do Fundo da Página para o Azul Claro da Empresa */
@@ -18,18 +18,43 @@ st.markdown("""
             background-color: #e6effa; 
         }
         
-        /* Estilização dos alertas para combinar com o fundo */
-        .stAlert { 
-            border-radius: 8px; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
+        /* CENTRALIZAÇÃO GLOBAL DE TEXTOS E ELEMENTOS INDICADOS */
+        .stApp h2, .stApp h3, .stApp h4, .stApp p, .stMarkdown p {
+            text-align: center !important;
+            justify-content: center !important;
         }
         
-        /* 2. CORREÇÃO CRUCIAL: Forçar quebra de linha em textos longos do st.metric */
+        /* Centralizar os alertas do Streamlit (st.success, st.info, st.warning) */
+        .stAlert { 
+            border-radius: 8px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            text-align: center !important;
+        }
+        .stAlert > div {
+            justify-content: center !important;
+            text-align: center !important;
+        }
+        
+        /* Centralizar o bloco de input da Nota Fiscal e seu texto descritivo */
+        [data-testid="stWidgetLabel"] {
+            text-align: center !important;
+            display: block !important;
+            width: 100% !important;
+        }
+        [data-testid="stTextInput"] div[data-baseweb="input"] {
+            max-width: 400px !important;
+            margin: 0 auto !important;
+        }
+        [data-testid="stTextInput"] input {
+            text-align: center !important;
+        }
+
+        /* 2. CORREÇÃO: Forçar quebra de linha em textos longos do st.metric */
         [data-testid="stMetricValue"] {
             white-space: normal !important;
             word-break: break-word !important;
             overflow-wrap: break-word !important;
-            font-size: 1.6rem !important; /* Diminui levemente o tamanho padrão se o texto for muito grande */
+            font-size: 1.6rem !important;
             line-height: 1.3 !important;
         }
         
@@ -49,14 +74,16 @@ st.markdown("""
             margin: 0 !important;
             letter-spacing: 1px;
             font-weight: 700;
+            text-align: center !important;
         }
         .header-banner p {
             margin: 5px 0 0 0 !important;
             font-size: 14px;
             opacity: 0.9;
+            text-align: center !important;
         }
 
-        /* Estrutura do Painel Horizontal de Etapas (Stepper) */
+                /* Estrutura do Painel Horizontal de Etapas (Stepper) */
         .stepper-wrapper {
             display: flex;
             justify-content: space-between;
@@ -64,14 +91,16 @@ st.markdown("""
             margin-bottom: 30px;
             position: relative;
         }
+        /* Linha cinza de fundo contínua e arredondada (IGUAL À IMAGEM) */
         .stepper-wrapper::before {
             content: "";
             position: absolute;
-            top: 25px;
+            top: 21px; /* Centraliza verticalmente com o círculo */
             left: 0;
             width: 100%;
-            height: 4px;
-            background-color: #d0dbe5;
+            height: 14px; /* Barra mais grossa como a do modelo */
+            background-color: #dbdbdb;
+            border-radius: 10px; /* Pontas totalmente arredondadas */
             z-index: 1;
         }
         .stepper-item {
@@ -80,7 +109,7 @@ st.markdown("""
             flex-direction: column;
             align-items: center;
             flex: 1;
-            z-index: 2;
+            z-index: 3; /* Fica acima das barras */
         }
         .stepper-item .step-counter {
             position: relative;
@@ -89,13 +118,15 @@ st.markdown("""
             display: flex;
             justify-content: center;
             align-items: center;
-            background: #cbd6e2;
+            background: #ffffff; /* Fundo branco para os círculos não iniciados */
+            border: 4px solid #cbd6e2;
             border-radius: 50%;
             font-weight: bold;
-            color: #ffffff;
+            color: #cbd6e2;
             font-size: 18px;
             transition: all 0.3s ease;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            z-index: 4;
         }
         .stepper-item .step-name {
             margin-top: 10px;
@@ -104,22 +135,26 @@ st.markdown("""
             color: #5c6b73;
             text-align: center;
         }
+        /* Círculo completo com verde brilhante */
         .stepper-item.completed .step-counter {
-            background-color: #2ec866;
+            background-color: #00e63d;
+            border-color: #00e63d;
             color: white;
         }
         .stepper-item.completed .step-name {
             color: #1b4f93;
             font-weight: bold;
         }
+        /* Linha verde ativa que vai preenchendo (IGUAL À IMAGEM) */
         .stepper-line-active {
             position: absolute;
-            top: 25px;
+            top: 21px; /* Alinhado perfeitamente com a cinza */
             left: 0;
-            height: 4px;
-            background-color: #2ec866;
-            z-index: 1;
-            transition: width 0.5s ease;
+            height: 14px;
+            background: linear-gradient(90deg, #00c732, #00e63d); /* Gradiente verde vivo */
+            border-radius: 10px; /* Pontas arredondadas ao encher */
+            z-index: 2; /* Fica acima da cinza e abaixo dos círculos */
+            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); /* Animação suave de preenchimento */
         }
     </style>
 """, unsafe_allow_html=True)
@@ -228,17 +263,24 @@ if pesquisa:
         st.markdown(f"### Status Atual: {info['status_atual']}")
         st.info(info["detalhe"])
         
-        # --- PAINEL HORIZONTAL DE PROGRESSO ---
+        # --- PAINEL HORIZONTAL DE PROGRESSO ESTILO BARRA CONTÍNUA ---
         st.markdown("### ⏳ Fluxo do Processo:")
-        largura_linha_verde = "0%"
-        if num_etapa == 2: largura_linha_verde = "33%"
-        elif num_etapa == 3: largura_linha_verde = "66%"
-        elif num_etapa == 4: largura_linha_verde = "100%"
         
+        # Define o preenchimento da barra verde contínua com compensação para as extremidades
+        largura_calculada = "0%"
+        if num_etapa == 1:
+            largura_calculada = "25px" # Preenche apenas o início do primeiro círculo
+        elif num_etapa == 2:
+            largura_calculada = "calc(33.33% + 25px)"
+        elif num_etapa == 3:
+            largura_calculada = "calc(66.66% + 25px)"
+        elif num_etapa == 4:
+            largura_calculada = "100%" # Barra totalmente preenchida e arredondada no final
+
         html_stepper = f"""
-        <div style="position: relative;">
-            <div class="stepper-line-active" style="width: {largura_linha_verde};"></div>
-            <div class="stepper-wrapper">
+        <div style="position: relative; width: 100%; box-sizing: border-box; padding: 0 25px;">
+            <div class="stepper-line-active" style="width: {largura_calculada};"></div>
+            <div class="stepper-wrapper" style="margin: 0; padding: 0;">
                 <div class="stepper-item {'completed' if num_etapa >= 1 else ''}">
                     <div class="step-counter">✓</div>
                     <div class="step-name">Em Separação</div>
@@ -259,6 +301,7 @@ if pesquisa:
         </div>
         """
         st.markdown(html_stepper, unsafe_allow_html=True)
+
         
         st.markdown("---")
         st.markdown("### 🔍 Detalhes do Pedido:")
