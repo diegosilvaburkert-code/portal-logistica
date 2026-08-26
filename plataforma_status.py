@@ -49,13 +49,29 @@ st.markdown("""
             text-align: center !important;
         }
 
-        /* 2. CORREÇÃO: Forçar quebra de linha em textos longos do st.metric */
+        /* CORREÇÃO DOS METRICS: Centraliza os Títulos Pequenos e os Valores Grandes */
+        [data-testid="stMetric"] {
+            text-align: center !important;
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        [data-testid="stMetricLabel"] {
+            text-align: center !important;
+            display: block !important;
+            width: 100% !important;
+            justify-content: center !important;
+        }
         [data-testid="stMetricValue"] {
             white-space: normal !important;
             word-break: break-word !important;
             overflow-wrap: break-word !important;
             font-size: 1.6rem !important;
             line-height: 1.3 !important;
+            text-align: center !important;
+            display: block !important;
+            width: 100% !important;
         }
         
         /* Banner Corporativo Superior */
@@ -83,7 +99,7 @@ st.markdown("""
             text-align: center !important;
         }
 
-                /* Estrutura do Painel Horizontal de Etapas (Stepper) */
+        /* Estrutura do Painel Horizontal de Etapas (Stepper - BARRA CONTÍNUA) */
         .stepper-wrapper {
             display: flex;
             justify-content: space-between;
@@ -91,16 +107,15 @@ st.markdown("""
             margin-bottom: 30px;
             position: relative;
         }
-        /* Linha cinza de fundo contínua e arredondada (IGUAL À IMAGEM) */
         .stepper-wrapper::before {
             content: "";
             position: absolute;
-            top: 21px; /* Centraliza verticalmente com o círculo */
+            top: 21px;
             left: 0;
             width: 100%;
-            height: 14px; /* Barra mais grossa como a do modelo */
+            height: 14px;
             background-color: #dbdbdb;
-            border-radius: 10px; /* Pontas totalmente arredondadas */
+            border-radius: 10px;
             z-index: 1;
         }
         .stepper-item {
@@ -109,7 +124,7 @@ st.markdown("""
             flex-direction: column;
             align-items: center;
             flex: 1;
-            z-index: 3; /* Fica acima das barras */
+            z-index: 3;
         }
         .stepper-item .step-counter {
             position: relative;
@@ -118,7 +133,7 @@ st.markdown("""
             display: flex;
             justify-content: center;
             align-items: center;
-            background: #ffffff; /* Fundo branco para os círculos não iniciados */
+            background: #ffffff;
             border: 4px solid #cbd6e2;
             border-radius: 50%;
             font-weight: bold;
@@ -135,7 +150,6 @@ st.markdown("""
             color: #5c6b73;
             text-align: center;
         }
-        /* Círculo completo com verde brilhante */
         .stepper-item.completed .step-counter {
             background-color: #00e63d;
             border-color: #00e63d;
@@ -145,16 +159,15 @@ st.markdown("""
             color: #1b4f93;
             font-weight: bold;
         }
-        /* Linha verde ativa que vai preenchendo (IGUAL À IMAGEM) */
         .stepper-line-active {
             position: absolute;
-            top: 21px; /* Alinhado perfeitamente com a cinza */
+            top: 21px;
             left: 0;
             height: 14px;
-            background: linear-gradient(90deg, #00c732, #00e63d); /* Gradiente verde vivo */
-            border-radius: 10px; /* Pontas arredondadas ao encher */
-            z-index: 2; /* Fica acima da cinza e abaixo dos círculos */
-            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); /* Animação suave de preenchimento */
+            background: linear-gradient(90deg, #00c732, #00e63d);
+            border-radius: 10px;
+            z-index: 2;
+            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
         }
     </style>
 """, unsafe_allow_html=True)
