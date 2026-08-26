@@ -4,19 +4,59 @@ import streamlit as st
 import json
 
 # --- CONFIGURAÇÃO DA GOOGLE SHEET ---
-LINK_PLANILHA = "https://docs.google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En0FEYfpVs-58e9S0"
+LINK_PLANILHA = "https://google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En0FEYfpVs-58e9S0/edit?gid=0#gid=0"
 NOME_DA_ABA = "controle"
 
 # Configuração da página web do Streamlit
 st.set_page_config(page_title="Portal de Status - Logística", page_icon="📦", layout="centered")
 
-# Estilização CSS avançada para o Stepper e fontes padronizadas
+# Estilização CSS avançada (Identidade Visual da Empresa e Correção de Layout)
 st.markdown("""
     <style>
-        .stApp { background-color: #f8f9fa; }
-        .stAlert { border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        /* 1. Alteração do Fundo da Página para o Azul Claro da Empresa */
+        .stApp { 
+            background-color: #e6effa; 
+        }
         
-        /* Estrutura do Painel Horizontal de Etapas */
+        /* Estilização dos alertas para combinar com o fundo */
+        .stAlert { 
+            border-radius: 8px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
+        }
+        
+        /* 2. CORREÇÃO CRUCIAL: Forçar quebra de linha em textos longos do st.metric */
+        [data-testid="stMetricValue"] {
+            white-space: normal !important;
+            word-break: break-word !important;
+            overflow-wrap: break-word !important;
+            font-size: 1.6rem !important; /* Diminui levemente o tamanho padrão se o texto for muito grande */
+            line-height: 1.3 !important;
+        }
+        
+        /* Banner Corporativo Superior */
+        .header-banner {
+            background: linear-gradient(90deg, #4f83cc, #1b4f93);
+            padding: 25px;
+            border-radius: 10px;
+            color: white;
+            text-align: center;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+        .header-banner h1 {
+            color: white !important;
+            font-size: 24px !important;
+            margin: 0 !important;
+            letter-spacing: 1px;
+            font-weight: 700;
+        }
+        .header-banner p {
+            margin: 5px 0 0 0 !important;
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        /* Estrutura do Painel Horizontal de Etapas (Stepper) */
         .stepper-wrapper {
             display: flex;
             justify-content: space-between;
@@ -31,7 +71,7 @@ st.markdown("""
             left: 0;
             width: 100%;
             height: 4px;
-            background-color: #e0e0e0;
+            background-color: #d0dbe5;
             z-index: 1;
         }
         .stepper-item {
@@ -49,7 +89,7 @@ st.markdown("""
             display: flex;
             justify-content: center;
             align-items: center;
-            background: #e0e0e0;
+            background: #cbd6e2;
             border-radius: 50%;
             font-weight: bold;
             color: #ffffff;
@@ -61,7 +101,7 @@ st.markdown("""
             margin-top: 10px;
             font-size: 13px;
             font-weight: 600;
-            color: #888888;
+            color: #5c6b73;
             text-align: center;
         }
         .stepper-item.completed .step-counter {
@@ -69,7 +109,7 @@ st.markdown("""
             color: white;
         }
         .stepper-item.completed .step-name {
-            color: #2ec866;
+            color: #1b4f93;
             font-weight: bold;
         }
         .stepper-line-active {
@@ -149,13 +189,19 @@ def calcular_fluxo_status(linha):
         }
     }
 
-st.title("📦 Portal de Status de Pedidos")
-st.write("Insira o número da Nota Fiscal para verificar o fluxo do processo em tempo real.")
+# --- APLICAÇÃO DO BANNER CORPORATIVO ---
+st.markdown("""
+    <div class="header-banner">
+        <h1>WELCOME TO THE PIONEERS OF FLOW</h1>
+        <p>Portal Logístico de Rastreamento de Pedidos em Tempo Real</p>
+    </div>
+""", unsafe_allow_html=True)
+
+st.write("Insira o número da Nota Fiscal abaixo para verificar o fluxo do processo.")
 
 try:
     aba_planilha = conectar_google_sheets()
     todos_dados = aba_planilha.get_all_values()
-    # Remove as linhas vazias do final da planilha para otimizar o loop
     linhas_pedidos = [l for l in todos_dados[1:] if any(l)]
     st.success("Conexão estabelecida com a base de dados Logística 2026!")
 except Exception as e:
@@ -166,8 +212,7 @@ pesquisa = st.text_input("Digite o número exato da Nota Fiscal:", placeholder="
 
 if pesquisa:
     pedido_encontrado = None
-    for linha in linhas_pedidos:
-        # CORRIGIDO: Força o Python a ler estritamente o índice 4 (Coluna E da Planilha)
+    for linha in list(linhas_pedidos):
         if len(linha) > 4:
             nf_numero = str(linha[4]).strip()
             if pesquisa == nf_numero:
@@ -227,10 +272,9 @@ if pesquisa:
         with col3:
             st.metric(label="Modalidade de Frete", value=cards["Incoterm"])
             
-        # --- LINHA 2 (Usa o componente nativo st.metric ocupando uma linha cheia) ---
+        # --- LINHA 2 (Agora auto-ajustável e sem cortes) ---
         st.metric(label="Transportador / Contato Completo", value=cards["Transportador"])
-        
-        # --- LINHA 3 ---
+                # --- LINHA 3 ---
         col_inf1, col_inf2 = st.columns(2)
         with col_inf1:
             st.metric(label="Natureza da Operação", value=cards["Operação"])
@@ -242,4 +286,5 @@ if pesquisa:
     else:
         st.warning(f"Nenhuma Nota Fiscal localizada com o número: '{pesquisa}'")
 
-st.markdown("<br><br><p style='text-align: right; color: gray; font-style: italic; font-size: 12px;'>Desenvolvido por Diego Elvis | Versão R.1.0 de 06.07</p>", unsafe_allow_html=True)
+st.markdown("Desenvolvido por Diego Elvis | Versão R.1.1 de 08.26", unsafe_allow_html=True)
+
