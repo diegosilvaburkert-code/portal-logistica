@@ -174,8 +174,21 @@ st.markdown("""
 
 @st.cache_resource
 def conectar_google_sheets():
+    """
+    Conecta de forma segura tratando strings corrompidas pelo formato TOML,
+    corrigindo duplicidades de barras na chave privada.
+    """
+    # Puxa o JSON cru gravado no secrets.toml
     info_json = st.secrets["gspread_credentials"]["json_string"]
     dic_chaves = json.loads(info_json, strict=False)
+    
+    # TRATAMENTO ANTI-CORRUPÇÃO DE CHAVE:
+    # Se o TOML salvou com barras duplas '\\n', o Python limpa e volta para '\n'
+    if "private_key" in dic_chaves:
+        # Substitui padrões corrompidos comuns pela quebra de linha real de criptografia
+        chave_limpa = dic_chaves["private_key"].replace("\\\\n", "\n").replace("\\n", "\n")
+        dic_chaves["private_key"] = chave_limpa
+        
     cliente = gspread.service_account_from_dict(dic_chaves)
     planilha = cliente.open_by_url(LINK_PLANILHA)
     return planilha.worksheet(NOME_DA_ABA)
