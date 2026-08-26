@@ -175,19 +175,16 @@ st.markdown("""
 @st.cache_resource
 def conectar_google_sheets():
     """
-    Conecta de forma segura tratando strings corrompidas pelo formato TOML,
-    corrigindo duplicidades de barras na chave privada.
+    Conecta de forma segura puxando os dados da aba de Secrets do Streamlit Cloud.
+    Remove totalmente as chaves do código para evitar que o GitHub as desative.
     """
-    # Puxa o JSON cru gravado no secrets.toml
+    # Puxa o JSON purificado gravado na aba Secrets do painel da nuvem
     info_json = st.secrets["gspread_credentials"]["json_string"]
     dic_chaves = json.loads(info_json, strict=False)
     
-    # TRATAMENTO ANTI-CORRUPÇÃO DE CHAVE:
-    # Se o TOML salvou com barras duplas '\\n', o Python limpa e volta para '\n'
+    # Corrige as quebras de linha que o formato TOML costuma duplicar
     if "private_key" in dic_chaves:
-        # Substitui padrões corrompidos comuns pela quebra de linha real de criptografia
-        chave_limpa = dic_chaves["private_key"].replace("\\\\n", "\n").replace("\\n", "\n")
-        dic_chaves["private_key"] = chave_limpa
+        dic_chaves["private_key"] = dic_chaves["private_key"].replace("\\\\n", "\n").replace("\\n", "\n")
         
     cliente = gspread.service_account_from_dict(dic_chaves)
     planilha = cliente.open_by_url(LINK_PLANILHA)
