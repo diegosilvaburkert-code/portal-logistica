@@ -458,7 +458,7 @@ if topo2.button("🔄 Atualizar"):
     st.rerun()
 
 aba1, aba2, aba3, aba4 = st.tabs(
-    ["🔎 Consulta por NF", "⏳ Pendentes de coleta", "📊 Dashboard", "🔧 Conserto/Reparo"])
+    ["🔎 Consulta Faturamento", "⏳ Pendentes de coleta", "📊 Dashboard", "🔧 Conserto/Reparo"])
 
 # ================= 1. CONSULTA (código original) =================
 with aba1:
