@@ -1,2 +1,4 @@
 gspread
 streamlit
+pandas
+altair
