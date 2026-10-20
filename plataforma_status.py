@@ -11,6 +11,7 @@ import streamlit as st
 LINK_PLANILHA = "https://google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En0FEYfpVs-58e9S0/edit?gid=0#gid=0"
 NOME_DA_ABA = "controle"
 ABA_PENDENTES = "Pendentes (FUP)"
+ABA_CONSERTO = "Retorno Conserto"  # nome exato da aba de reparos na planilha
 PRAZO_ALERTA = 3  # dias sem coleta a partir dos quais o caso é considerado atrasado
 
 st.set_page_config(page_title="Portal de Status - Logística", page_icon="📦", layout="wide")
@@ -218,6 +219,27 @@ def df_pendentes(valores):
     return df
 
 
+def df_conserto(valores):
+    """Lê a aba de reparos. Localiza o cabeçalho pela coluna 'Número da Nota do Cliente'."""
+    ini = 2
+    for i, l in enumerate(valores[:8]):
+        if any("nota do" in c.lower() for c in l):
+            ini = i + 1
+            break
+    cols = ["Recebimento", "Nota cliente", "Cliente", "Pendência", "Entrada por",
+            "Data entrada", "Entregue serviço", "NF venda garantia", "Resp. saída",
+            "NF retorno", "Emissão NF saída", "Contabilização"]
+    linhas = [(l + [""] * 12)[:12] for l in valores[ini:]]
+    df = pd.DataFrame(linhas, columns=cols)
+    df = df.apply(lambda c: c.astype(str).str.strip())
+    df = df[(df["Cliente"] != "") | (df["Nota cliente"] != "")].copy()
+    df["_ordem"] = para_data(df["Recebimento"])
+    p = df["Pendência"].str.lower()
+    sem_pend = (p == "") | p.str.match(r"^(finalizado|n[aã]o h[aá] pend)")
+    df["_pend"] = ~sem_pend
+    return df
+
+
 def df_controle(valores):
     cols = ["Responsável", "Operação", "Incoterm", "Cliente", "NF",
             "Transportadora", "Coleta", "Data Solic.", "Data Col.", "Observações"]
@@ -302,7 +324,6 @@ try:
     todos_dados = ler_valores(NOME_DA_ABA)
     linhas_pedidos = [l for l in todos_dados[1:] if any(l)]
     pend = df_pendentes(ler_valores(ABA_PENDENTES))
-    ctrl = df_controle(todos_dados)
 except Exception as e:
     st.error(f"Erro ao conectar com a planilha: {e}")
     st.stop()
@@ -314,7 +335,7 @@ if topo2.button("🔄 Atualizar"):
     st.rerun()
 
 aba1, aba2, aba3, aba4 = st.tabs(
-    ["🔎 Consulta por NF", "⏳ Pendentes de coleta", "📊 Dashboard", "✅ Coletados"])
+    ["🔎 Consulta por NF", "⏳ Pendentes de coleta", "📊 Dashboard", "🔧 Conserto/Reparo"])
 
 # ================= 1. CONSULTA (código original) =================
 with aba1:
@@ -480,19 +501,46 @@ with aba3:
                         .encode(x="Data Solicitação:T", y="Qtd:Q", tooltip=["Data Solicitação", "Qtd"]),
                         use_container_width=True)
 
-# ================= 4. COLETADOS =================
+# ================= 4. CONSERTO / REPARO =================
 with aba4:
-    col = ctrl[ctrl["Data Col."].notna()].copy()
-    g1, g2, g3 = st.columns(3)
-    resp = g1.multiselect("Responsável", sorted(col["Responsável"].unique()))
-    oper = g2.multiselect("Operação", sorted(col["Operação"].unique()))
-    busca = g3.text_input("Buscar cliente / transportadora")
-    if resp: col = col[col["Responsável"].isin(resp)]
-    if oper: col = col[col["Operação"].isin(oper)]
-    if busca:
-        col = col[col["Cliente"].str.contains(busca, case=False, na=False) |
-                  col["Transportadora"].str.contains(busca, case=False, na=False)]
-    st.caption(f"{len(col)} caso(s) coletado(s)")
-    st.dataframe(col.sort_values("Data Col.", ascending=False), use_container_width=True, hide_index=True)
+    try:
+        rep = df_conserto(ler_valores(ABA_CONSERTO))
+    except Exception as e:
+        st.error(f"Não consegui ler a aba '{ABA_CONSERTO}'. Confira o nome da aba na planilha.")
+        st.caption(str(e))
+        st.stop()
+
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Total de entradas", len(rep))
+    k2.metric("Com pendência / bloqueio", int(rep["_pend"].sum()))
+    k3.metric("Sem NF de saída emitida", int((rep["Emissão NF saída"] == "").sum()))
+
+    f1, f2, f3, f4 = st.columns(4)
+    cli = f1.multiselect("Cliente", sorted(rep["Cliente"].unique()))
+    ent = f2.multiselect("Entrada realizada por", sorted(x for x in rep["Entrada por"].unique() if x))
+    nota = f3.text_input("Buscar nº da nota")
+    so_pend = f4.toggle("Só com pendência")
+
+    v = rep.copy()
+    if cli: v = v[v["Cliente"].isin(cli)]
+    if ent: v = v[v["Entrada por"].isin(ent)]
+    if nota: v = v[v["Nota cliente"].str.contains(nota.strip(), case=False, na=False)]
+    if so_pend: v = v[v["_pend"]]
+
+    st.caption(f"{len(v)} registro(s)")
+    v = v.sort_values("_ordem", ascending=False)
+    mostrar = v[["Recebimento", "Nota cliente", "Cliente", "Pendência",
+                 "Entrada por", "Data entrada", "Emissão NF saída"]].rename(columns={
+        "Nota cliente": "Nº Nota", "Entrada por": "Entrada realizada por",
+        "Data entrada": "Data de entrada", "Emissão NF saída": "Emissão NF de saída"})
+    pend_mask = v["_pend"].values
+
+    def destaca(row):
+        c = "background-color:#fde2e2" if pend_mask[mostrar.index.get_loc(row.name)] else ""
+        return [c] * len(row)
+
+    st.dataframe(mostrar.style.apply(destaca, axis=1), use_container_width=True, hide_index=True)
+    st.download_button("⬇️ Baixar CSV", mostrar.to_csv(index=False).encode("utf-8-sig"),
+                       "conserto_reparo.csv", "text/csv")
 
 st.markdown("Desenvolvido por Diego Elvis | Versão R.2.0 de 10.26", unsafe_allow_html=True)
