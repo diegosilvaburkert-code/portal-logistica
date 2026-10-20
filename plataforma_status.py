@@ -240,6 +240,51 @@ def df_conserto(valores):
     return df
 
 
+def status_conserto(r):
+    """Regras: bloqueio > NF retorno > entrada realizada > aguardando entrada."""
+    base = bool(r["Nota cliente"] and r["Cliente"])
+    bloqueado = base and bool(r["_pend"])
+    retorno = bool(r["NF retorno"])
+    entrada = bool(r["Entrada por"] and r["Data entrada"])
+    if not base:
+        return {"etapa": 0, "status": "⚪ Dados incompletos", "bloqueado": False,
+                "detalhe": "Faltam o número da nota ou o cliente no registro.",
+                "passos": ["pendente"] * 4}
+    if bloqueado:
+        return {"etapa": 1, "status": "🔴 Bloqueado — aguardando resolução da divergência",
+                "bloqueado": True,
+                "detalhe": f"Pendência registrada: {r['Pendência']}. O material só segue após a divergência ser resolvida.",
+                "passos": ["ok", "bloqueado", "pendente", "pendente"]}
+    if retorno:
+        return {"etapa": 4, "status": "🔵 Aguardando coleta", "bloqueado": False,
+                "detalhe": f"NF de retorno {r['NF retorno']} emitida"
+                           + (f" em {r['Emissão NF saída']}." if r["Emissão NF saída"] else "."),
+                "passos": ["ok", "ok", "ok", "ok"]}
+    if entrada:
+        return {"etapa": 3, "status": "🟠 Entregue para conserto", "bloqueado": False,
+                "detalhe": f"Entrada realizada por {r['Entrada por']} em {r['Data entrada']}. Material em conserto.",
+                "passos": ["ok", "ok", "ok", "pendente"]}
+    return {"etapa": 2, "status": "⚪ Aguardando Entrada", "bloqueado": False,
+            "detalhe": "Nota e cliente registrados, sem pendências. Aguardando a entrada do material.",
+            "passos": ["ok", "ok", "pendente", "pendente"]}
+
+
+def html_timeline(passos, etapa):
+    nomes = ["Aguardando Entrada", "Pendência / Bloqueio", "Entregue p/ Conserto", "Aguardando Coleta"]
+    largura = {0: "0%", 1: "25px", 2: "calc(33.33% + 25px)", 3: "calc(66.66% + 25px)", 4: "100%"}[etapa]
+    itens = ""
+    for nome, p in zip(nomes, passos):
+        classe = {"ok": "completed", "bloqueado": "blocked", "pendente": ""}[p]
+        icone = {"ok": "✓", "bloqueado": "✕", "pendente": ""}[p]
+        itens += (f'<div class="stepper-item {classe}"><div class="step-counter">{icone}</div>'
+                  f'<div class="step-name">{nome}</div></div>')
+    return ('<style>.stepper-item.blocked .step-counter{background:#e53935;border-color:#e53935;color:#fff}'
+            '.stepper-item.blocked .step-name{color:#e53935;font-weight:bold}</style>'
+            '<div style="position:relative;width:100%;box-sizing:border-box;padding:0 25px;">'
+            f'<div class="stepper-line-active" style="width:{largura};"></div>'
+            f'<div class="stepper-wrapper" style="margin:0;padding:0;">{itens}</div></div>')
+
+
 def df_controle(valores):
     cols = ["Responsável", "Operação", "Incoterm", "Cliente", "NF",
             "Transportadora", "Coleta", "Data Solic.", "Data Col.", "Observações"]
@@ -501,46 +546,53 @@ with aba3:
                         .encode(x="Data Solicitação:T", y="Qtd:Q", tooltip=["Data Solicitação", "Qtd"]),
                         use_container_width=True)
 
-# ================= 4. CONSERTO / REPARO =================
+# ================= 4. CONSERTO / REPARO (consulta por NF + timeline) =================
 with aba4:
-    try:
-        rep = df_conserto(ler_valores(ABA_CONSERTO))
-    except Exception as e:
-        st.error(f"Não consegui ler a aba '{ABA_CONSERTO}'. Confira o nome da aba na planilha.")
-        st.caption(str(e))
-        st.stop()
+    _, mid4, _ = st.columns([1, 3, 1])
+    with mid4:
+        try:
+            rep = df_conserto(ler_valores(ABA_CONSERTO))
+        except Exception as e:
+            st.error(f"Não consegui ler a aba '{ABA_CONSERTO}'. Confira o nome da aba na planilha.")
+            st.caption(str(e))
+            st.stop()
 
-    k1, k2, k3 = st.columns(3)
-    k1.metric("Total de entradas", len(rep))
-    k2.metric("Com pendência / bloqueio", int(rep["_pend"].sum()))
-    k3.metric("Sem NF de saída emitida", int((rep["Emissão NF saída"] == "").sum()))
+        st.write("Digite o número da Nota Fiscal do cliente para acompanhar o conserto/reparo.")
+        q = st.text_input("Número da Nota Fiscal (conserto):", placeholder="Ex: 295889-1 ou 295889...",
+                          key="nf_conserto").strip()
 
-    f1, f2, f3, f4 = st.columns(4)
-    cli = f1.multiselect("Cliente", sorted(rep["Cliente"].unique()))
-    ent = f2.multiselect("Entrada realizada por", sorted(x for x in rep["Entrada por"].unique() if x))
-    nota = f3.text_input("Buscar nº da nota")
-    so_pend = f4.toggle("Só com pendência")
+        if q:
+            base = rep["Nota cliente"].str.split("-").str[0]
+            achou = rep[(rep["Nota cliente"] == q) | (base == q) | (rep["NF retorno"] == q)]
+            if achou.empty:
+                st.warning(f"Nenhum registro de conserto encontrado para: '{q}'")
+            else:
+                if len(achou) > 1:
+                    opcoes = {f"{r['Nota cliente']} — {r['Cliente']}": i for i, r in achou.iterrows()}
+                    escolha = st.selectbox("Mais de um registro encontrado, escolha:", list(opcoes))
+                    r = achou.loc[opcoes[escolha]]
+                else:
+                    r = achou.iloc[0]
 
-    v = rep.copy()
-    if cli: v = v[v["Cliente"].isin(cli)]
-    if ent: v = v[v["Entrada por"].isin(ent)]
-    if nota: v = v[v["Nota cliente"].str.contains(nota.strip(), case=False, na=False)]
-    if so_pend: v = v[v["_pend"]]
+                info = status_conserto(r)
+                st.markdown(f"## 📋 Cliente: {r['Cliente']}")
+                st.markdown(f"### Status Atual: {info['status']}")
+                (st.error if info["bloqueado"] else st.info)(info["detalhe"])
 
-    st.caption(f"{len(v)} registro(s)")
-    v = v.sort_values("_ordem", ascending=False)
-    mostrar = v[["Recebimento", "Nota cliente", "Cliente", "Pendência",
-                 "Entrada por", "Data entrada", "Emissão NF saída"]].rename(columns={
-        "Nota cliente": "Nº Nota", "Entrada por": "Entrada realizada por",
-        "Data entrada": "Data de entrada", "Emissão NF saída": "Emissão NF de saída"})
-    pend_mask = v["_pend"].values
+                st.markdown("### ⏳ Fluxo do Conserto:")
+                st.markdown(html_timeline(info["passos"], info["etapa"]), unsafe_allow_html=True)
 
-    def destaca(row):
-        c = "background-color:#fde2e2" if pend_mask[mostrar.index.get_loc(row.name)] else ""
-        return [c] * len(row)
-
-    st.dataframe(mostrar.style.apply(destaca, axis=1), use_container_width=True, hide_index=True)
-    st.download_button("⬇️ Baixar CSV", mostrar.to_csv(index=False).encode("utf-8-sig"),
-                       "conserto_reparo.csv", "text/csv")
+                st.markdown("---")
+                st.markdown("### 🔍 Detalhes:")
+                d1, d2, d3 = st.columns(3)
+                d1.metric("Nota do Cliente", r["Nota cliente"])
+                d2.metric("Data de Recebimento", r["Recebimento"] or "-")
+                d3.metric("Pendência / Bloqueio", r["Pendência"] or "Sem pendência")
+                d4, d5 = st.columns(2)
+                d4.metric("Entrada realizada por", r["Entrada por"] or "-")
+                d5.metric("Data de Entrada", r["Data entrada"] or "-")
+                d6, d7 = st.columns(2)
+                d6.metric("NF de Retorno", r["NF retorno"] or "-")
+                d7.metric("Emissão da NF de Saída", r["Emissão NF saída"] or "-")
 
 st.markdown("Desenvolvido por Diego Elvis | Versão R.2.0 de 10.26", unsafe_allow_html=True)
