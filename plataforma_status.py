@@ -480,16 +480,6 @@ with aba3:
                         .encode(x="Data Solicitação:T", y="Qtd:Q", tooltip=["Data Solicitação", "Qtd"]),
                         use_container_width=True)
 
-    st.subheader("Tempo de coleta (casos já coletados)")
-    lt = ctrl.dropna(subset=["Lead time (dias)"])
-    m1, m2 = st.columns(2)
-    m1.metric("Lead time médio (dias)", f"{lt['Lead time (dias)'].mean():.1f}" if len(lt) else "-")
-    m2.metric("Coletas concluídas", len(lt))
-    if len(lt):
-        d = lt.groupby("Responsável")["Lead time (dias)"].mean().round(1).reset_index()
-        st.altair_chart(barra(d, "Responsável", "Lead time (dias)", "Lead time médio por responsável"),
-                        use_container_width=True)
-
 # ================= 4. COLETADOS =================
 with aba4:
     col = ctrl[ctrl["Data Col."].notna()].copy()
