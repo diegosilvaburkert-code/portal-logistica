@@ -1,6 +1,7 @@
 import datetime
 import json
 import re
+import unicodedata
 
 import altair as alt
 import gspread
@@ -219,63 +220,95 @@ def df_pendentes(valores):
     return df
 
 
+def _norm(t):
+    t = unicodedata.normalize("NFKD", str(t)).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def df_conserto(valores):
-    """Lê a aba de reparos. Localiza o cabeçalho pela coluna 'Número da Nota do Cliente'."""
-    ini = 2
+    """Lê a aba de reparos pelos NOMES das colunas (se alguém inserir/mover colunas, continua certo)."""
+    ini, cab = 2, None
     for i, l in enumerate(valores[:8]):
-        if any("nota do" in c.lower() for c in l):
-            ini = i + 1
+        if any("nota do cliente" in _norm(c) for c in l):
+            ini, cab = i + 1, [_norm(c) for c in l]
             break
-    cols = ["Recebimento", "Nota cliente", "Cliente", "Pendência", "Entrada por",
-            "Data entrada", "Entregue serviço", "NF venda garantia", "Resp. saída",
-            "NF retorno", "Emissão NF saída", "Contabilização"]
-    linhas = [(l + [""] * 12)[:12] for l in valores[ini:]]
-    df = pd.DataFrame(linhas, columns=cols)
-    df = df.apply(lambda c: c.astype(str).str.strip())
+
+    def achar(termos, padrao, comeca=None):
+        if cab is None:
+            return padrao  # cabeçalho não localizado: usa a posição padrão
+        for j, h in enumerate(cab):
+            if all(t in h for t in termos) and (comeca is None or h.startswith(comeca)):
+                return j
+        return None
+
+    mapa = {
+        "Recebimento": achar(("recebimento", "data"), 0),
+        "Nota cliente": achar(("numero", "nota"), 1),
+        "Cliente": achar(("cliente",), 2, "cliente"),
+        "Pendência": achar(("pendencia",), 3),
+        "Entrada por": achar(("entrada", "realizada"), 4),
+        "Data entrada": achar(("entrada", "data"), 5),
+        "Liberado": achar(("liberado",), 7),
+        "NF retorno": achar(("retorno",), 9),
+        "Emissão NF saída": achar(("emissao",), 10),
+    }
+    linhas = valores[ini:]
+    df = pd.DataFrame({k: [(l[j].strip() if j is not None and j < len(l) else "") for l in linhas]
+                       for k, j in mapa.items()})
     df = df[(df["Cliente"] != "") | (df["Nota cliente"] != "")].copy()
     df["_ordem"] = para_data(df["Recebimento"])
     p = df["Pendência"].str.lower()
     sem_pend = (p == "") | p.str.match(r"^(finalizado|n[aã]o h[aá] pend)")
     df["_pend"] = ~sem_pend
+    df["_lib"] = df["Liberado"].str.upper().isin(["TRUE", "VERDADEIRO", "SIM", "X", "1", "✓"])
     return df
 
 
 def status_conserto(r):
-    """Regras: bloqueio > NF retorno > entrada realizada > aguardando entrada."""
+    """Prioridade: bloqueio > NF retorno > liberado pela assistência > entrada > aguardando entrada."""
     base = bool(r["Nota cliente"] and r["Cliente"])
-    bloqueado = base and bool(r["_pend"])
     retorno = bool(r["NF retorno"])
+    liberado = bool(r["_lib"])
     entrada = bool(r["Entrada por"] and r["Data entrada"])
     if not base:
         return {"etapa": 0, "status": "⚪ Dados incompletos", "bloqueado": False,
                 "detalhe": "Faltam o número da nota ou o cliente no registro.",
-                "passos": ["pendente"] * 4}
-    if bloqueado:
-        return {"etapa": 1, "status": "🔴 Bloqueado — aguardando resolução da divergência",
+                "passos": ["pendente"] * 5}
+    if r["_pend"]:
+        return {"etapa": 2, "status": "🔴 Bloqueado — aguardando resolução da divergência",
                 "bloqueado": True,
                 "detalhe": f"Pendência registrada: {r['Pendência']}. O material só segue após a divergência ser resolvida.",
-                "passos": ["ok", "bloqueado", "pendente", "pendente"]}
+                "passos": ["ok", "bloqueado", "pendente", "pendente", "pendente"]}
+    p3 = entrada or liberado or retorno
+    p4 = liberado or retorno
+    passos = ["ok", "ok", "ok" if p3 else "pendente", "ok" if p4 else "pendente", "ok" if retorno else "pendente"]
+    etapa = 2 + sum(1 for x in passos[2:] if x == "ok")
     if retorno:
-        return {"etapa": 4, "status": "🔵 Aguardando coleta", "bloqueado": False,
-                "detalhe": f"NF de retorno {r['NF retorno']} emitida"
-                           + (f" em {r['Emissão NF saída']}." if r["Emissão NF saída"] else "."),
-                "passos": ["ok", "ok", "ok", "ok"]}
-    if entrada:
-        return {"etapa": 3, "status": "🟠 Entregue para conserto", "bloqueado": False,
-                "detalhe": f"Entrada realizada por {r['Entrada por']} em {r['Data entrada']}. Material em conserto.",
-                "passos": ["ok", "ok", "ok", "pendente"]}
-    return {"etapa": 2, "status": "⚪ Aguardando Entrada", "bloqueado": False,
-            "detalhe": "Nota e cliente registrados, sem pendências. Aguardando a entrada do material.",
-            "passos": ["ok", "ok", "pendente", "pendente"]}
+        status = "🔵 Aguardando coleta"
+        detalhe = (f"NF de retorno {r['NF retorno']} emitida"
+                   + (f" em {r['Emissão NF saída']}" if r["Emissão NF saída"] else "")
+                   + ". Aguardando o cliente coletar o material.")
+    elif liberado:
+        status = "🟣 Aguardando Emissão de Nota para Retorno"
+        detalhe = ("Material liberado pela assistência. Aguardando a emissão da NF de retorno de conserto "
+                   "para encaminhar ao cliente realizar a coleta.")
+    elif entrada:
+        status = "🟠 Entregue para conserto"
+        detalhe = f"Entrada realizada por {r['Entrada por']} em {r['Data entrada']}. Material em conserto."
+    else:
+        status = "⚪ Aguardando Entrada"
+        detalhe = "Nota e cliente registrados, sem pendências. Aguardando a entrada do material."
+    return {"etapa": etapa, "status": status, "bloqueado": False, "detalhe": detalhe, "passos": passos}
 
 
 def html_timeline(passos, etapa):
-    nomes = ["Aguardando Entrada", "Pendência / Bloqueio", "Entregue p/ Conserto", "Aguardando Coleta"]
+    nomes = ["Aguardando Entrada", "Pendência / Bloqueio", "Entregue p/ Conserto",
+             "Liberado pela Assistência", "Aguardando Coleta"]
     bloqueado = "bloqueado" in passos
     if bloqueado:
         etapa = 2  # a barra vai até o X vermelho (fase 2)
-    # a barra vai até o CENTRO do círculo da etapa (cada etapa ocupa 25% da trilha)
-    largura = {0: "0%", 1: "12.5%", 2: "37.5%", 3: "62.5%", 4: "100%"}[etapa]
+    # a barra vai até o CENTRO do círculo da etapa (cada etapa ocupa 20% da trilha)
+    largura = {0: "0%", 1: "10%", 2: "30%", 3: "50%", 4: "70%", 5: "100%"}[etapa]
     fundo = "background:linear-gradient(90deg,#e53935,#c62828);" if bloqueado else ""
     itens = ""
     for nome, p in zip(nomes, passos):
@@ -596,8 +629,9 @@ with aba4:
                 d4, d5 = st.columns(2)
                 d4.metric("Entrada realizada por", r["Entrada por"] or "-")
                 d5.metric("Data de Entrada", r["Data entrada"] or "-")
-                d6, d7 = st.columns(2)
-                d6.metric("NF de Retorno", r["NF retorno"] or "-")
-                d7.metric("Emissão da NF de Saída", r["Emissão NF saída"] or "-")
+                d6, d7, d8 = st.columns(3)
+                d6.metric("Liberado pela Assistência", "Sim" if r["_lib"] else "Não")
+                d7.metric("NF de Retorno", r["NF retorno"] or "-")
+                d8.metric("Emissão da NF de Saída", r["Emissão NF saída"] or "-")
 
 st.markdown("Desenvolvido por Diego Elvis | Versão R.2.0 de 10.26", unsafe_allow_html=True)
