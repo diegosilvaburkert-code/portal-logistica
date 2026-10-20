@@ -1,16 +1,20 @@
 import datetime
-import gspread
-import streamlit as st
 import json
+import re
+
+import altair as alt
+import gspread
+import pandas as pd
+import streamlit as st
 
 # --- CONFIGURAÇÃO DA GOOGLE SHEET ---
 LINK_PLANILHA = "https://google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En0FEYfpVs-58e9S0/edit?gid=0#gid=0"
 NOME_DA_ABA = "controle"
+ABA_PENDENTES = "Pendentes (FUP)"
+PRAZO_ALERTA = 3  # dias sem coleta a partir dos quais o caso é considerado atrasado
 
-# Configuração da página web do Streamlit
-st.set_page_config(page_title="Portal de Status - Logística", page_icon="📦", layout="centered")
+st.set_page_config(page_title="Portal de Status - Logística", page_icon="📦", layout="wide")
 
-# Estilização CSS avançada (Identidade Visual, Centralização Completa e Ajuste de Layout)
 st.markdown("""
     <style>
         /* 1. Alteração do Fundo da Página para o Azul Claro da Empresa */
@@ -172,23 +176,60 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+
 @st.cache_resource
 def conectar_google_sheets():
-    """
-    Conecta de forma segura puxando os dados da aba de Secrets do Streamlit Cloud.
-    Remove totalmente as chaves do código para evitar que o GitHub as desative.
-    """
-    # Puxa o JSON purificado gravado na aba Secrets do painel da nuvem
+    """Conecta usando as credenciais da aba Secrets do Streamlit Cloud."""
     info_json = st.secrets["gspread_credentials"]["json_string"]
     dic_chaves = json.loads(info_json, strict=False)
-    
-    # Corrige as quebras de linha que o formato TOML costuma duplicar
     if "private_key" in dic_chaves:
         dic_chaves["private_key"] = dic_chaves["private_key"].replace("\\\\n", "\n").replace("\\n", "\n")
-        
     cliente = gspread.service_account_from_dict(dic_chaves)
-    planilha = cliente.open_by_url(LINK_PLANILHA)
-    return planilha.worksheet(NOME_DA_ABA)
+    return cliente.open_by_url(LINK_PLANILHA)
+
+
+@st.cache_data(ttl=300)
+def ler_valores(aba):
+    return conectar_google_sheets().worksheet(aba).get_all_values()
+
+
+def para_data(s):
+    return pd.to_datetime(s, dayfirst=True, errors="coerce")
+
+
+def limpa_status(s):
+    s = re.sub(r"^[^\w\u00C0-\u00FF]+", "", str(s)).strip()
+    return s or "Sem status"
+
+
+def df_pendentes(valores):
+    cols = ["Frete", "Cliente", "NF", "Transporte", "Ordem de coleta",
+            "Data Solicitação", "Obs", "Status"]
+    linhas = [(l + [""] * 8)[:8] for l in valores[1:]]
+    df = pd.DataFrame(linhas, columns=cols)
+    df = df[df["NF"].str.strip() != ""].copy()
+    df["NF"] = df["NF"].str.strip()
+    df["Status"] = df["Status"].map(limpa_status)
+    df["Data Solicitação"] = para_data(df["Data Solicitação"])
+    df["Dias pendente"] = (pd.Timestamp.today().normalize() - df["Data Solicitação"]).dt.days
+    df["Faixa"] = pd.cut(df["Dias pendente"], [-9999, 0, 2, 5, 10, 99999],
+                         labels=["Hoje", "1-2 dias", "3-5 dias", "6-10 dias", "+10 dias"])
+    df["Atrasado"] = df["Dias pendente"] > PRAZO_ALERTA
+    return df
+
+
+def df_controle(valores):
+    cols = ["Responsável", "Operação", "Incoterm", "Cliente", "NF",
+            "Transportadora", "Coleta", "Data Solic.", "Data Col.", "Observações"]
+    linhas = [(l + [""] * 10)[:10] for l in valores[1:]]
+    df = pd.DataFrame(linhas, columns=cols)
+    df = df[df["NF"].str.strip() != ""].copy()
+    df["NF"] = df["NF"].str.strip()
+    df["Data Solic."] = para_data(df["Data Solic."])
+    df["Data Col."] = para_data(df["Data Col."])
+    df["Lead time (dias)"] = (df["Data Col."].dt.normalize() - df["Data Solic."]).dt.days
+    return df
+
 
 def calcular_fluxo_status(linha):
     def pegar_valor(idx):
@@ -255,102 +296,211 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-st.write("Insira o número da Nota Fiscal abaixo para verificar o fluxo do processo.")
 
+st.write("")
 try:
-    aba_planilha = conectar_google_sheets()
-    todos_dados = aba_planilha.get_all_values()
+    todos_dados = ler_valores(NOME_DA_ABA)
     linhas_pedidos = [l for l in todos_dados[1:] if any(l)]
-    st.success("Conexão estabelecida com a base de dados Logística 2026!")
+    pend = df_pendentes(ler_valores(ABA_PENDENTES))
+    ctrl = df_controle(todos_dados)
 except Exception as e:
     st.error(f"Erro ao conectar com a planilha: {e}")
     st.stop()
 
-pesquisa = st.text_input("Digite o número exato da Nota Fiscal:", placeholder="Ex: 47219...").strip()
+topo1, topo2 = st.columns([6, 1])
+topo1.success("Conexão estabelecida com a base de dados Logística 2026!")
+if topo2.button("🔄 Atualizar"):
+    st.cache_data.clear()
+    st.rerun()
 
-if pesquisa:
-    pedido_encontrado = None
-    for linha in list(linhas_pedidos):
-        if len(linha) > 4:
-            nf_numero = str(linha[4]).strip()
-            if pesquisa == nf_numero:
-                pedido_encontrado = linha
-                break
+aba1, aba2, aba3, aba4 = st.tabs(
+    ["🔎 Consulta por NF", "⏳ Pendentes de coleta", "📊 Dashboard", "✅ Coletados"])
+
+# ================= 1. CONSULTA (código original) =================
+with aba1:
+    _, mid, _ = st.columns([1, 3, 1])
+    with mid:
+        st.write("Insira o número da Nota Fiscal abaixo para verificar o fluxo do processo.")
+        pesquisa = st.text_input("Digite o número exato da Nota Fiscal:", placeholder="Ex: 47219...").strip()
+
+        if pesquisa:
+            pedido_encontrado = None
+            for linha in list(linhas_pedidos):
+                if len(linha) > 4:
+                    nf_numero = str(linha[4]).strip()
+                    if pesquisa == nf_numero:
+                        pedido_encontrado = linha
+                        break
             
-    if pedido_encontrado:
-        info = calcular_fluxo_status(pedido_encontrado)
-        cards = info["detalhes_card"]
-        num_etapa = info["etapa_atingida"]
+            if pedido_encontrado:
+                info = calcular_fluxo_status(pedido_encontrado)
+                cards = info["detalhes_card"]
+                num_etapa = info["etapa_atingida"]
         
-        st.markdown(f"## 📋 Cliente: {cards['Cliente']}")
-        st.markdown(f"### Status Atual: {info['status_atual']}")
-        st.info(info["detalhe"])
+                st.markdown(f"## 📋 Cliente: {cards['Cliente']}")
+                st.markdown(f"### Status Atual: {info['status_atual']}")
+                st.info(info["detalhe"])
         
-        # --- PAINEL HORIZONTAL DE PROGRESSO ESTILO BARRA CONTÍNUA ---
-        st.markdown("### ⏳ Fluxo do Processo:")
+                # --- PAINEL HORIZONTAL DE PROGRESSO ESTILO BARRA CONTÍNUA ---
+                st.markdown("### ⏳ Fluxo do Processo:")
         
-        # Define o preenchimento da barra verde contínua com compensação para as extremidades
-        largura_calculada = "0%"
-        if num_etapa == 1:
-            largura_calculada = "25px" # Preenche apenas o início do primeiro círculo
-        elif num_etapa == 2:
-            largura_calculada = "calc(33.33% + 25px)"
-        elif num_etapa == 3:
-            largura_calculada = "calc(66.66% + 25px)"
-        elif num_etapa == 4:
-            largura_calculada = "100%" # Barra totalmente preenchida e arredondada no final
+                # Define o preenchimento da barra verde contínua com compensação para as extremidades
+                largura_calculada = "0%"
+                if num_etapa == 1:
+                    largura_calculada = "25px" # Preenche apenas o início do primeiro círculo
+                elif num_etapa == 2:
+                    largura_calculada = "calc(33.33% + 25px)"
+                elif num_etapa == 3:
+                    largura_calculada = "calc(66.66% + 25px)"
+                elif num_etapa == 4:
+                    largura_calculada = "100%" # Barra totalmente preenchida e arredondada no final
 
-        html_stepper = f"""
-        <div style="position: relative; width: 100%; box-sizing: border-box; padding: 0 25px;">
-            <div class="stepper-line-active" style="width: {largura_calculada};"></div>
-            <div class="stepper-wrapper" style="margin: 0; padding: 0;">
-                <div class="stepper-item {'completed' if num_etapa >= 1 else ''}">
-                    <div class="step-counter">✓</div>
-                    <div class="step-name">Em Separação</div>
+                html_stepper = f"""
+                <div style="position: relative; width: 100%; box-sizing: border-box; padding: 0 25px;">
+                    <div class="stepper-line-active" style="width: {largura_calculada};"></div>
+                    <div class="stepper-wrapper" style="margin: 0; padding: 0;">
+                        <div class="stepper-item {'completed' if num_etapa >= 1 else ''}">
+                            <div class="step-counter">✓</div>
+                            <div class="step-name">Em Separação</div>
+                        </div>
+                        <div class="stepper-item {'completed' if num_etapa >= 2 else ''}">
+                            <div class="step-counter">✓</div>
+                            <div class="step-name">Faturado</div>
+                        </div>
+                        <div class="stepper-item {'completed' if num_etapa >= 3 else ''}">
+                            <div class="step-counter">✓</div>
+                            <div class="step-name">Coleta Solicitada</div>
+                        </div>
+                        <div class="stepper-item {'completed' if num_etapa >= 4 else ''}">
+                            <div class="step-counter">✓</div>
+                            <div class="step-name">Coleta Efetivada</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="stepper-item {'completed' if num_etapa >= 2 else ''}">
-                    <div class="step-counter">✓</div>
-                    <div class="step-name">Faturado</div>
-                </div>
-                <div class="stepper-item {'completed' if num_etapa >= 3 else ''}">
-                    <div class="step-counter">✓</div>
-                    <div class="step-name">Coleta Solicitada</div>
-                </div>
-                <div class="stepper-item {'completed' if num_etapa >= 4 else ''}">
-                    <div class="step-counter">✓</div>
-                    <div class="step-name">Coleta Efetivada</div>
-                </div>
-            </div>
-        </div>
-        """
-        st.markdown(html_stepper, unsafe_allow_html=True)
+                """
+                st.markdown(html_stepper, unsafe_allow_html=True)
 
         
-        st.markdown("---")
-        st.markdown("### 🔍 Detalhes do Pedido:")
+                st.markdown("---")
+                st.markdown("### 🔍 Detalhes do Pedido:")
         
-        # --- LINHA 1 ---
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric(label="Nota Fiscal", value=cards["N.F."])
-        with col2:
-            st.metric(label="Nº Coleta / Registro", value=cards["Coleta/Rastreio"])
-        with col3:
-            st.metric(label="Modalidade de Frete", value=cards["Incoterm"])
+                # --- LINHA 1 ---
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric(label="Nota Fiscal", value=cards["N.F."])
+                with col2:
+                    st.metric(label="Nº Coleta / Registro", value=cards["Coleta/Rastreio"])
+                with col3:
+                    st.metric(label="Modalidade de Frete", value=cards["Incoterm"])
             
-        # --- LINHA 2 (Agora auto-ajustável e sem cortes) ---
-        st.metric(label="Transportador / Contato Completo", value=cards["Transportador"])
-                # --- LINHA 3 ---
-        col_inf1, col_inf2 = st.columns(2)
-        with col_inf1:
-            st.metric(label="Natureza da Operação", value=cards["Operação"])
-        with col_inf2:
-            st.metric(label="Data do Contato", value=cards["Data Contato"])
+                # --- LINHA 2 (Agora auto-ajustável e sem cortes) ---
+                st.metric(label="Transportador / Contato Completo", value=cards["Transportador"])
+                        # --- LINHA 3 ---
+                col_inf1, col_inf2 = st.columns(2)
+                with col_inf1:
+                    st.metric(label="Natureza da Operação", value=cards["Operação"])
+                with col_inf2:
+                    st.metric(label="Data do Contato", value=cards["Data Contato"])
             
-        st.markdown("#### 💬 Mensagem / Observações Gerais (Coluna J):")
-        st.warning(cards["Observações"])
-    else:
-        st.warning(f"Nenhuma Nota Fiscal localizada com o número: '{pesquisa}'")
+                st.markdown("#### 💬 Mensagem / Observações Gerais (Coluna J):")
+                st.warning(cards["Observações"])
+            else:
+                st.warning(f"Nenhuma Nota Fiscal localizada com o número: '{pesquisa}'")
 
-st.markdown("Desenvolvido por Diego Elvis | Versão R.1.1 de 08.26", unsafe_allow_html=True)
 
+        if pesquisa:
+            p = pend[pend["NF"] == pesquisa]
+            if not p.empty:
+                r = p.iloc[0]
+                st.error(f"⚠️ Esta NF consta como PENDENTE de coleta há {int(r['Dias pendente'])} dia(s) — Status: {r['Status']}")
+
+# ================= 2. PENDENTES =================
+with aba2:
+    f1, f2, f3, f4 = st.columns(4)
+    frete = f1.multiselect("Frete", sorted(pend["Frete"].unique()))
+    status = f2.multiselect("Status", sorted(pend["Status"].unique()))
+    cliente = f3.multiselect("Cliente", sorted(pend["Cliente"].unique()))
+    so_atr = f4.toggle(f"Só atrasados (> {PRAZO_ALERTA} dias)")
+
+    v = pend.copy()
+    if frete: v = v[v["Frete"].isin(frete)]
+    if status: v = v[v["Status"].isin(status)]
+    if cliente: v = v[v["Cliente"].isin(cliente)]
+    if so_atr: v = v[v["Atrasado"]]
+
+    st.caption(f"{len(v)} caso(s) pendente(s)")
+    cols = ["NF", "Cliente", "Frete", "Transporte", "Ordem de coleta",
+            "Data Solicitação", "Dias pendente", "Status", "Obs"]
+    v = v.sort_values("Dias pendente", ascending=False)[cols]
+
+    def cor(row):
+        d = row["Dias pendente"]
+        c = "#fde2e2" if d > 5 else "#fff3d6" if d > PRAZO_ALERTA else ""
+        return [f"background-color:{c}"] * len(row)
+
+    st.dataframe(v.style.apply(cor, axis=1).format({"Data Solicitação": "{:%d/%m/%Y}"}),
+                 use_container_width=True, hide_index=True)
+    st.download_button("⬇️ Baixar CSV", v.to_csv(index=False).encode("utf-8-sig"),
+                       "pendentes.csv", "text/csv")
+
+# ================= 3. DASHBOARD =================
+with aba3:
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Total pendente", len(pend))
+    k2.metric(f"Atrasados (> {PRAZO_ALERTA}d)", int(pend["Atrasado"].sum()))
+    k3.metric("Média de dias pendente", f"{pend['Dias pendente'].mean():.1f}" if len(pend) else "-")
+    k4.metric("Mais antigo (dias)", int(pend["Dias pendente"].max()) if len(pend) else 0)
+
+    def barra(df, x, y, titulo, horiz=False):
+        if horiz:
+            enc = dict(x=alt.X(f"{x}:Q", title=None), y=alt.Y(f"{y}:N", sort="-x", title=None))
+        else:
+            enc = dict(x=alt.X(f"{x}:N", sort=None, title=None), y=alt.Y(f"{y}:Q", title=None))
+        return alt.Chart(df, title=titulo).mark_bar().encode(**enc, tooltip=list(df.columns))
+
+    c1, c2 = st.columns(2)
+    with c1:
+        d = pend["Status"].value_counts().rename_axis("Status").reset_index(name="Qtd")
+        st.altair_chart(barra(d, "Qtd", "Status", "Pendentes por status", True), use_container_width=True)
+    with c2:
+        ordem = ["Hoje", "1-2 dias", "3-5 dias", "6-10 dias", "+10 dias"]
+        d = pend["Faixa"].value_counts().reindex(ordem).fillna(0).rename_axis("Faixa").reset_index(name="Qtd")
+        d["Faixa"] = d["Faixa"].astype(str)
+        st.altair_chart(barra(d, "Faixa", "Qtd", "Idade dos pendentes (prazo)"), use_container_width=True)
+
+    c3, c4 = st.columns(2)
+    with c3:
+        d = pend["Cliente"].value_counts().head(10).rename_axis("Cliente").reset_index(name="Qtd")
+        st.altair_chart(barra(d, "Qtd", "Cliente", "Top 10 clientes com pendência", True), use_container_width=True)
+    with c4:
+        d = pend.dropna(subset=["Data Solicitação"]).groupby("Data Solicitação").size().reset_index(name="Qtd")
+        st.altair_chart(alt.Chart(d, title="Solicitações pendentes por data").mark_line(point=True)
+                        .encode(x="Data Solicitação:T", y="Qtd:Q", tooltip=["Data Solicitação", "Qtd"]),
+                        use_container_width=True)
+
+    st.subheader("Tempo de coleta (casos já coletados)")
+    lt = ctrl.dropna(subset=["Lead time (dias)"])
+    m1, m2 = st.columns(2)
+    m1.metric("Lead time médio (dias)", f"{lt['Lead time (dias)'].mean():.1f}" if len(lt) else "-")
+    m2.metric("Coletas concluídas", len(lt))
+    if len(lt):
+        d = lt.groupby("Responsável")["Lead time (dias)"].mean().round(1).reset_index()
+        st.altair_chart(barra(d, "Responsável", "Lead time (dias)", "Lead time médio por responsável"),
+                        use_container_width=True)
+
+# ================= 4. COLETADOS =================
+with aba4:
+    col = ctrl[ctrl["Data Col."].notna()].copy()
+    g1, g2, g3 = st.columns(3)
+    resp = g1.multiselect("Responsável", sorted(col["Responsável"].unique()))
+    oper = g2.multiselect("Operação", sorted(col["Operação"].unique()))
+    busca = g3.text_input("Buscar cliente / transportadora")
+    if resp: col = col[col["Responsável"].isin(resp)]
+    if oper: col = col[col["Operação"].isin(oper)]
+    if busca:
+        col = col[col["Cliente"].str.contains(busca, case=False, na=False) |
+                  col["Transportadora"].str.contains(busca, case=False, na=False)]
+    st.caption(f"{len(col)} caso(s) coletado(s)")
+    st.dataframe(col.sort_values("Data Col.", ascending=False), use_container_width=True, hide_index=True)
+
+st.markdown("Desenvolvido por Diego Elvis | Versão R.2.0 de 10.26", unsafe_allow_html=True)
