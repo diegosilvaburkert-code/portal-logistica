@@ -271,7 +271,11 @@ def status_conserto(r):
 
 def html_timeline(passos, etapa):
     nomes = ["Aguardando Entrada", "Pendência / Bloqueio", "Entregue p/ Conserto", "Aguardando Coleta"]
+    bloqueado = "bloqueado" in passos
+    if bloqueado:
+        etapa = 2  # a barra vai até o X vermelho (fase 2)
     largura = {0: "0%", 1: "25px", 2: "calc(33.33% + 25px)", 3: "calc(66.66% + 25px)", 4: "100%"}[etapa]
+    fundo = "background:linear-gradient(90deg,#e53935,#c62828);" if bloqueado else ""
     itens = ""
     for nome, p in zip(nomes, passos):
         classe = {"ok": "completed", "bloqueado": "blocked", "pendente": ""}[p]
@@ -281,7 +285,7 @@ def html_timeline(passos, etapa):
     return ('<style>.stepper-item.blocked .step-counter{background:#e53935;border-color:#e53935;color:#fff}'
             '.stepper-item.blocked .step-name{color:#e53935;font-weight:bold}</style>'
             '<div style="position:relative;width:100%;box-sizing:border-box;padding:0 25px;">'
-            f'<div class="stepper-line-active" style="width:{largura};"></div>'
+            f'<div class="stepper-line-active" style="width:{largura};{fundo}"></div>'
             f'<div class="stepper-wrapper" style="margin:0;padding:0;">{itens}</div></div>')
 
 
