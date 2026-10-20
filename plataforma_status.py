@@ -438,7 +438,9 @@ with aba2:
         c = "#fde2e2" if d > 5 else "#fff3d6" if d > PRAZO_ALERTA else ""
         return [f"background-color:{c}"] * len(row)
 
-    st.dataframe(v.style.apply(cor, axis=1).format({"Data Solicitação": "{:%d/%m/%Y}"}),
+        fmt_data = lambda d: d.strftime("%d/%m/%Y") if pd.notna(d) else "-"
+    st.dataframe(v.style.apply(cor, axis=1)
+                 .format({"Data Solicitação": fmt_data, "Dias pendente": "{:.0f}"}, na_rep="-"),
                  use_container_width=True, hide_index=True)
     st.download_button("⬇️ Baixar CSV", v.to_csv(index=False).encode("utf-8-sig"),
                        "pendentes.csv", "text/csv")
