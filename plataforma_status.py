@@ -572,7 +572,7 @@ with aba2:
 
     st.caption(f"{len(v)} caso(s) pendente(s)")
     cols = ["NF", "Cliente", "Frete", "Transporte", "Ordem de coleta",
-            "Data Solicitação", "Dias pendente", "Status", "Obs"]
+            "Data Solicitação", "Dias pendente"]
     v = v.sort_values("Dias pendente", ascending=False)[cols]
 
     def cor(row):
@@ -580,10 +580,21 @@ with aba2:
         c = "#fde2e2" if d > 5 else "#fff3d6" if d > PRAZO_ALERTA else ""
         return [f"background-color:{c}"] * len(row)
 
-    st.dataframe(v.style.apply(cor, axis=1)
-                 .format({"Data Solicitação": lambda d: d.strftime("%d/%m/%Y") if pd.notna(d) else "-",
-                          "Dias pendente": "{:.0f}"}, na_rep="-"),
-                 use_container_width=True, hide_index=True)
+    sty = (v.style.apply(cor, axis=1)
+           .format({"Data Solicitação": lambda d: d.strftime("%d/%m/%Y") if pd.notna(d) else "-",
+                    "Dias pendente": "{:.0f}"}, escape="html", na_rep="-")
+           .hide(axis="index")
+           .set_properties(**{"text-align": "center"})
+           .set_table_styles([{"selector": "th", "props": [("text-align", "center")]}]))
+    html_tab = "\n".join(l.strip() for l in sty.to_html().splitlines() if l.strip())
+    st.markdown(
+        """<style>
+        .tabela-pend{max-height:620px;overflow:auto;border-radius:8px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+        .tabela-pend table{width:100%;border-collapse:collapse;font-size:14px}
+        .tabela-pend th{position:sticky;top:0;background:#1b4f93;color:#fff;padding:10px 8px;z-index:1}
+        .tabela-pend td{padding:8px;border-bottom:1px solid #e4e9f0;text-align:center}
+        </style>""" + f'<div class="tabela-pend">{html_tab}</div>',
+        unsafe_allow_html=True)
     st.download_button("⬇️ Baixar CSV", v.to_csv(index=False).encode("utf-8-sig"),
                        "pendentes.csv", "text/csv")
 
