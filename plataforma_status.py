@@ -264,31 +264,55 @@ def df_conserto(valores):
     return df
 
 
-def status_conserto(r):
+def mapa_coletas(valores):
+    """Aba 'controle': liga o nº da NF (col. N.F.) à data da coleta (DATA Col.), solicitação e transportadora."""
+    m = {}
+    for l in valores[1:]:
+        l = list(l) + [""] * 9
+        nf = str(l[4]).strip()
+        if not nf:
+            continue
+        reg = {"transp": str(l[5]).strip(), "data_solic": str(l[7]).strip(), "data_col": str(l[8]).strip()}
+        if nf not in m or (reg["data_col"] and not m[nf]["data_col"]):
+            m[nf] = reg
+    return m
+
+
+def status_conserto(r, coletas=None):
     """Fluxo sequencial: cada fase só é considerada OK se as anteriores também estiverem OK."""
+    coletas = coletas or {}
     if not (r["Nota cliente"] and r["Cliente"]):
-        return {"etapa": 0, "status": "⚪ Dados incompletos", "bloqueado": False,
+        return {"etapa": 0, "status": "⚪ Dados incompletos", "bloqueado": False, "coleta": {},
                 "detalhe": "Faltam o número da nota ou o cliente no registro.",
-                "passos": ["pendente"] * 6}
+                "passos": ["pendente"] * 7}
     if r["_pend"]:
         return {"etapa": 2, "status": "🔴 Bloqueado — aguardando resolução da divergência",
-                "bloqueado": True,
+                "bloqueado": True, "coleta": {},
                 "detalhe": f"Pendência registrada: {r['Pendência']}. O material só segue após a divergência ser resolvida.",
-                "passos": ["ok", "bloqueado"] + ["pendente"] * 4}
+                "passos": ["ok", "bloqueado"] + ["pendente"] * 5}
 
     ent = bool(r["Entrada por"] and r["Data entrada"])
     lib, nf, dt = bool(r["_lib"]), bool(r["NF retorno"]), bool(r["Emissão NF saída"])
+    col = coletas.get(r["NF retorno"].strip(), {}) if nf else {}
     s3 = ent                 # Entregue para conserto
     s4 = s3 and lib          # Liberado pela Assistência (flag)
     s5 = s4 and nf           # Aguardando Emissão de Retorno -> OK quando a NF de retorno é preenchida
     s6 = s5 and dt           # Aguardando Coleta -> NF de retorno + data de emissão
-    passos = ["ok", "ok"] + ["ok" if x else "pendente" for x in (s3, s4, s5, s6)]
-    etapa = 2 + sum((s3, s4, s5, s6))
+    s7 = s6 and bool(col.get("data_col"))   # Coletado -> data de coleta na aba controle (pelo nº da NF)
+    passos = ["ok", "ok"] + ["ok" if x else "pendente" for x in (s3, s4, s5, s6, s7)]
+    etapa = 2 + sum((s3, s4, s5, s6, s7))
 
-    if s6:
+    if s7:
+        status = "🟢 Coletado"
+        detalhe = (f"Material coletado em {col['data_col']}"
+                   + (f" pela transportadora {col['transp']}" if col.get("transp") and col["transp"] != "-" else "")
+                   + f" (NF de retorno {r['NF retorno']}). Processo concluído.")
+    elif s6:
         status = "🔵 Aguardando coleta"
         detalhe = (f"NF de retorno {r['NF retorno']} emitida em {r['Emissão NF saída']}. "
                    "Aguardando o cliente coletar o material.")
+        if col.get("data_solic"):
+            detalhe += f" Coleta solicitada em {col['data_solic']}."
     elif s4:
         status = "🟣 Aguardando Emissão de Retorno"
         if s5:
@@ -304,19 +328,21 @@ def status_conserto(r):
         status = "⚪ Aguardando Entrada"
         detalhe = "Nota e cliente registrados, sem pendências. Aguardando a entrada do material."
 
-    if (lib and not s3) or (nf and not s4) or (dt and not s5):
+    if (lib and not s3) or (nf and not s4) or (dt and not s5) or (col.get("data_col") and not s6):
         detalhe += " ⚠️ Há campos preenchidos fora da sequência do fluxo; confira a planilha."
-    return {"etapa": etapa, "status": status, "bloqueado": False, "detalhe": detalhe, "passos": passos}
+    return {"etapa": etapa, "status": status, "bloqueado": False, "detalhe": detalhe,
+            "passos": passos, "coleta": col}
 
 
 def html_timeline(passos, etapa):
     nomes = ["Aguardando Entrada", "Pendência / Bloqueio", "Entregue p/ Conserto",
-             "Liberado pela Assistência", "Aguardando Emissão de Retorno", "Aguardando Coleta"]
+             "Liberado pela Assistência", "Aguardando Emissão de Retorno", "Aguardando Coleta", "Coletado"]
     bloqueado = "bloqueado" in passos
     if bloqueado:
         etapa = 2  # a barra vai até o X vermelho (fase 2)
-    # a barra vai até o CENTRO do círculo da etapa (cada etapa ocupa 1/6 da trilha)
-    largura = {0: "0%", 1: "8.33%", 2: "25%", 3: "41.67%", 4: "58.33%", 5: "75%", 6: "100%"}[etapa]
+    # a barra vai até o CENTRO do círculo da etapa (cada etapa ocupa 1/7 da trilha)
+    largura = {0: "0%", 1: "7.14%", 2: "21.43%", 3: "35.71%", 4: "50%", 5: "64.29%",
+               6: "78.57%", 7: "100%"}[etapa]
     fundo = "background:linear-gradient(90deg,#e53935,#c62828);" if bloqueado else ""
     itens = ""
     for nome, p in zip(nomes, passos):
@@ -620,7 +646,7 @@ with aba4:
                 else:
                     r = achou.iloc[0]
 
-                info = status_conserto(r)
+                info = status_conserto(r, mapa_coletas(todos_dados))
                 st.markdown(f"## 📋 Cliente: {r['Cliente']}")
                 st.markdown(f"### Status Atual: {info['status']}")
                 (st.error if info["bloqueado"] else st.info)(info["detalhe"])
@@ -641,5 +667,8 @@ with aba4:
                 d6.metric("Liberado pela Assistência", "Sim" if r["_lib"] else "Não")
                 d7.metric("NF de Retorno", r["NF retorno"] or "-")
                 d8.metric("Emissão da NF de Saída", r["Emissão NF saída"] or "-")
+                d9, d10 = st.columns(2)
+                d9.metric("Data da Coleta", info["coleta"].get("data_col") or "-")
+                d10.metric("Transportadora", info["coleta"].get("transp") or "-")
 
 st.markdown("Desenvolvido por Diego Elvis | Versão R.2.0 de 10.26", unsafe_allow_html=True)
