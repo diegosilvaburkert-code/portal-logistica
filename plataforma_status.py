@@ -175,6 +175,10 @@ st.markdown("""
             z-index: 2;
             transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
         }
+        /* Centraliza as abas (tabs) do topo */
+        div[data-baseweb="tab-list"], [data-testid="stTabs"] [role="tablist"] {
+            justify-content: center !important;
+        }
     </style>
 """, unsafe_allow_html=True)
 
