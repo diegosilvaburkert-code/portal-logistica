@@ -14,6 +14,7 @@ LINK_PLANILHA = "https://google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En
 NOME_DA_ABA = "controle"
 ABA_PENDENTES = "Pendentes (FUP)"
 ABA_CONSERTO = "Retorno Conserto"  # nome exato da aba de reparos na planilha
+CLIENTES_IGNORADOS = ["burkert"]  # clientes excluídos do Dashboard (parte do nome, sem acento/maiúscula)
 PRAZO_ALERTA = 3  # dias sem coleta a partir dos quais o caso é considerado atrasado
 
 st.set_page_config(page_title="Portal de Status - Logística", page_icon="📦", layout="wide")
@@ -725,6 +726,14 @@ def _lista(itens, fmt):
         for n, v in itens)
 
 
+def sem_ignorados(df, col="Cliente"):
+    """Remove do dataframe os clientes listados em CLIENTES_IGNORADOS."""
+    if df is None or df.empty:
+        return df
+    nomes = df[col].map(_norm)
+    return df[~nomes.apply(lambda n: any(i in n for i in CLIENTES_IGNORADOS))]
+
+
 def dados_conserto(rep, coletas, hoje):
     """Uma linha por NF de retorno emitida: dias entre a emissão (liberação p/ coleta) e a coleta (ou hoje)."""
     if rep is None or rep.empty:
@@ -836,8 +845,9 @@ with aba3:
     except Exception:
         rep_d = None
         st.warning(f"Não consegui ler a aba '{ABA_CONSERTO}'; os indicadores de conserto ficam vazios.")
-    r2 = dados_conserto(rep_d, mapa_coletas(todos_dados), hoje)
-    fat = dados_faturadas(todos_dados, hoje)
+    r2 = sem_ignorados(dados_conserto(rep_d, mapa_coletas(todos_dados), hoje))
+    fat = sem_ignorados(dados_faturadas(todos_dados, hoje))
+    pend_d = sem_ignorados(pend)
 
     meses = sorted(fat["mes"].dropna().unique(), reverse=True)
     sel = None
@@ -846,7 +856,7 @@ with aba3:
         _, cs, _ = st.columns([2, 1, 2])
         sel = cs.selectbox("Mês de referência (notas faturadas)", meses,
                            index=meses.index(atual) if atual in meses else 0, format_func=_nome_mes)
-    st.markdown(montar_dashboard(pend, r2, fat, sel, hoje), unsafe_allow_html=True)
+    st.markdown(montar_dashboard(pend_d, r2, fat, sel, hoje), unsafe_allow_html=True)
 
 # ================= 4. CONSERTO / REPARO (consulta por NF + timeline) =================
 with aba4:
