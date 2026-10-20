@@ -265,50 +265,58 @@ def df_conserto(valores):
 
 
 def status_conserto(r):
-    """Prioridade: bloqueio > NF retorno > liberado pela assistência > entrada > aguardando entrada."""
-    base = bool(r["Nota cliente"] and r["Cliente"])
-    retorno = bool(r["NF retorno"])
-    liberado = bool(r["_lib"])
-    entrada = bool(r["Entrada por"] and r["Data entrada"])
-    if not base:
+    """Fluxo sequencial: cada fase só é considerada OK se as anteriores também estiverem OK."""
+    if not (r["Nota cliente"] and r["Cliente"]):
         return {"etapa": 0, "status": "⚪ Dados incompletos", "bloqueado": False,
                 "detalhe": "Faltam o número da nota ou o cliente no registro.",
-                "passos": ["pendente"] * 5}
+                "passos": ["pendente"] * 6}
     if r["_pend"]:
         return {"etapa": 2, "status": "🔴 Bloqueado — aguardando resolução da divergência",
                 "bloqueado": True,
                 "detalhe": f"Pendência registrada: {r['Pendência']}. O material só segue após a divergência ser resolvida.",
-                "passos": ["ok", "bloqueado", "pendente", "pendente", "pendente"]}
-    p3 = entrada or liberado or retorno
-    p4 = liberado or retorno
-    passos = ["ok", "ok", "ok" if p3 else "pendente", "ok" if p4 else "pendente", "ok" if retorno else "pendente"]
-    etapa = 2 + sum(1 for x in passos[2:] if x == "ok")
-    if retorno:
+                "passos": ["ok", "bloqueado"] + ["pendente"] * 4}
+
+    ent = bool(r["Entrada por"] and r["Data entrada"])
+    lib, nf, dt = bool(r["_lib"]), bool(r["NF retorno"]), bool(r["Emissão NF saída"])
+    s3 = ent                 # Entregue para conserto
+    s4 = s3 and lib          # Liberado pela Assistência (flag)
+    s5 = s4 and nf           # Aguardando Emissão de Retorno -> OK quando a NF de retorno é preenchida
+    s6 = s5 and dt           # Aguardando Coleta -> NF de retorno + data de emissão
+    passos = ["ok", "ok"] + ["ok" if x else "pendente" for x in (s3, s4, s5, s6)]
+    etapa = 2 + sum((s3, s4, s5, s6))
+
+    if s6:
         status = "🔵 Aguardando coleta"
-        detalhe = (f"NF de retorno {r['NF retorno']} emitida"
-                   + (f" em {r['Emissão NF saída']}" if r["Emissão NF saída"] else "")
-                   + ". Aguardando o cliente coletar o material.")
-    elif liberado:
-        status = "🟣 Aguardando Emissão de Nota para Retorno"
-        detalhe = ("Material liberado pela assistência. Aguardando a emissão da NF de retorno de conserto "
-                   "para encaminhar ao cliente realizar a coleta.")
-    elif entrada:
+        detalhe = (f"NF de retorno {r['NF retorno']} emitida em {r['Emissão NF saída']}. "
+                   "Aguardando o cliente coletar o material.")
+    elif s4:
+        status = "🟣 Aguardando Emissão de Retorno"
+        if s5:
+            detalhe = (f"NF de retorno {r['NF retorno']} informada, mas falta a data de emissão "
+                       "para liberar a coleta.")
+        else:
+            detalhe = ("Material liberado pela assistência. Aguardando a emissão da NF de retorno de conserto "
+                       "para encaminhar ao cliente realizar a coleta.")
+    elif s3:
         status = "🟠 Entregue para conserto"
         detalhe = f"Entrada realizada por {r['Entrada por']} em {r['Data entrada']}. Material em conserto."
     else:
         status = "⚪ Aguardando Entrada"
         detalhe = "Nota e cliente registrados, sem pendências. Aguardando a entrada do material."
+
+    if (lib and not s3) or (nf and not s4) or (dt and not s5):
+        detalhe += " ⚠️ Há campos preenchidos fora da sequência do fluxo; confira a planilha."
     return {"etapa": etapa, "status": status, "bloqueado": False, "detalhe": detalhe, "passos": passos}
 
 
 def html_timeline(passos, etapa):
     nomes = ["Aguardando Entrada", "Pendência / Bloqueio", "Entregue p/ Conserto",
-             "Liberado pela Assistência", "Aguardando Coleta"]
+             "Liberado pela Assistência", "Aguardando Emissão de Retorno", "Aguardando Coleta"]
     bloqueado = "bloqueado" in passos
     if bloqueado:
         etapa = 2  # a barra vai até o X vermelho (fase 2)
-    # a barra vai até o CENTRO do círculo da etapa (cada etapa ocupa 20% da trilha)
-    largura = {0: "0%", 1: "10%", 2: "30%", 3: "50%", 4: "70%", 5: "100%"}[etapa]
+    # a barra vai até o CENTRO do círculo da etapa (cada etapa ocupa 1/6 da trilha)
+    largura = {0: "0%", 1: "8.33%", 2: "25%", 3: "41.67%", 4: "58.33%", 5: "75%", 6: "100%"}[etapa]
     fundo = "background:linear-gradient(90deg,#e53935,#c62828);" if bloqueado else ""
     itens = ""
     for nome, p in zip(nomes, passos):
