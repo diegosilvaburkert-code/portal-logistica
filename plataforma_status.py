@@ -877,7 +877,16 @@ with aba4:
             base = rep["Nota cliente"].str.split("-").str[0]
             achou = rep[(rep["Nota cliente"] == q) | (base == q) | (rep["NF retorno"] == q)]
             if achou.empty:
-                st.warning(f"Nenhum registro de conserto encontrado para: '{q}'")
+                st.markdown(
+                    '<div style="background:#fff4e5;border:2px solid #f5a623;border-radius:12px;padding:26px 20px;'
+                    'text-align:center;box-shadow:0 4px 12px rgba(245,166,35,.18);margin-top:10px">'
+                    '<div style="font-size:38px;line-height:1">⚠️</div>'
+                    '<div style="font-size:24px;font-weight:800;color:#b45309;margin-top:8px">'
+                    'Nota Fiscal NÃO recebida em nossa Expedição</div>'
+                    '<div style="font-size:16px;color:#5c6b73;margin-top:8px">'
+                    'ou número incluído incorretamente</div>'
+                    f'<div style="font-size:13px;color:#8a97ab;margin-top:12px">Número pesquisado: <b>{esc(q)}</b></div>'
+                    '</div>', unsafe_allow_html=True)
             else:
                 if len(achou) > 1:
                     opcoes = {f"{r['Nota cliente']} — {r['Cliente']}": i for i, r in achou.iterrows()}
