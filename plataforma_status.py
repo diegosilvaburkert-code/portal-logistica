@@ -433,6 +433,46 @@ def calcular_fluxo_status(linha):
         }
     }
 
+CSS_DET = """<style>
+.dt-grid{display:grid;gap:14px;margin-top:6px}
+.dt-3{grid-template-columns:repeat(3,1fr)}
+.dt-1{grid-template-columns:1fr;margin-top:14px}
+@media(max-width:760px){.dt-3{grid-template-columns:1fr}}
+.dt-card{background:#fff;border-radius:12px;padding:16px 14px;text-align:center;box-shadow:0 3px 10px rgba(27,79,147,.10);border-top:4px solid #4f83cc;display:flex;flex-direction:column;justify-content:center;min-height:86px}
+.dt-l{font-size:11.5px;font-weight:700;letter-spacing:.6px;color:#6b7a90;text-transform:uppercase}
+.dt-v{font-size:22px;font-weight:700;color:#1b4f93;margin-top:6px;line-height:1.25;overflow-wrap:anywhere}
+.dt-v.sm{font-size:18px}
+.dt-v.vazio{color:#9aa7ba;font-weight:600}
+.dt-obs{background:#fff8e6;border-top-color:#f5a623}
+.dt-obs .dt-v{font-size:16px;font-weight:500;color:#5c4a1d}
+.dt-obs .dt-v.vazio{color:#a39a85}
+</style>"""
+
+
+def html_detalhes_pedido(cards, data_col):
+    """Grade de detalhes do pedido: 3 colunas, transportador e observações em largura total."""
+    def cartao(rotulo, valor, vazio_se=(), extra=""):
+        v = str(valor).strip()
+        vazio = (not v) or v in vazio_se
+        txt = esc(v) if v and not vazio else (esc(v) if v else "—")
+        cls = "dt-v" + (" vazio" if vazio else "") + (" sm" if extra == "sm" else "")
+        return f'<div class="dt-card{" dt-obs" if extra == "obs" else ""}"><div class="dt-l">{rotulo}</div><div class="{cls}">{txt}</div></div>'
+
+    nao = ("Não solicitado", "Não realizado", "Não informado", "Não informada", "Aguardando definição")
+    linha1 = (cartao("🧾 Nota Fiscal", cards["N.F."])
+              + cartao("🚚 Modalidade de Frete", cards["Incoterm"], nao)
+              + cartao("📦 Natureza da Operação", cards["Operação"], nao))
+    linha2 = (cartao("🔖 Nº Coleta / Registro", cards["Coleta/Rastreio"], nao)
+              + cartao("📅 Data do Contato", cards["Data Contato"], nao)
+              + cartao("✅ Data da Coleta", data_col or "Ainda não coletada", ("Ainda não coletada",)))
+    transp = cartao("🏢 Transportador / Contato", cards["Transportador"], nao, "sm")
+    sem_obs = "Nenhuma observação registrada para esta nota."
+    obs = cartao("💬 Observações Gerais", cards["Observações"], (sem_obs,), "obs")
+    h = (CSS_DET + f'<div class="dt-grid dt-3">{linha1}</div><div class="dt-grid dt-3" style="margin-top:14px">{linha2}</div>'
+         f'<div class="dt-grid dt-1">{transp}</div><div class="dt-grid dt-1">{obs}</div>')
+    return "\n".join(l.strip() for l in h.splitlines() if l.strip())
+
+
 # --- APLICAÇÃO DO BANNER CORPORATIVO ---
 st.markdown("""
     <div class="header-banner">
@@ -528,27 +568,8 @@ with aba1:
         
                 st.markdown("---")
                 st.markdown("### 🔍 Detalhes do Pedido:")
-        
-                # --- LINHA 1 ---
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric(label="Nota Fiscal", value=cards["N.F."])
-                with col2:
-                    st.metric(label="Nº Coleta / Registro", value=cards["Coleta/Rastreio"])
-                with col3:
-                    st.metric(label="Modalidade de Frete", value=cards["Incoterm"])
-            
-                # --- LINHA 2 (Agora auto-ajustável e sem cortes) ---
-                st.metric(label="Transportador / Contato Completo", value=cards["Transportador"])
-                        # --- LINHA 3 ---
-                col_inf1, col_inf2 = st.columns(2)
-                with col_inf1:
-                    st.metric(label="Natureza da Operação", value=cards["Operação"])
-                with col_inf2:
-                    st.metric(label="Data do Contato", value=cards["Data Contato"])
-            
-                st.markdown("#### 💬 Mensagem / Observações Gerais (Coluna J):")
-                st.warning(cards["Observações"])
+                data_col_pedido = str(pedido_encontrado[8]).strip() if len(pedido_encontrado) > 8 else ""
+                st.markdown(html_detalhes_pedido(cards, data_col_pedido), unsafe_allow_html=True)
             else:
                 st.warning(f"Nenhuma Nota Fiscal localizada com o número: '{pesquisa}'")
 
