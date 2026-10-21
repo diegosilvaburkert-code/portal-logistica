@@ -446,6 +446,9 @@ CSS_DET = """<style>
 .dt-obs{background:#fff8e6;border-top-color:#f5a623}
 .dt-obs .dt-v{font-size:16px;font-weight:500;color:#5c4a1d}
 .dt-obs .dt-v.vazio{color:#a39a85}
+.dt-v.ok{color:#1e8e3e}
+.dt-v.bad{color:#c62828}
+.dt-card.dt-bad{border-top-color:#e53935;background:#fff5f5}
 </style>"""
 
 
@@ -470,6 +473,40 @@ def html_detalhes_pedido(cards, data_col):
     obs = cartao("💬 Observações Gerais", cards["Observações"], (sem_obs,), "obs")
     h = (CSS_DET + f'<div class="dt-grid dt-3">{linha1}</div><div class="dt-grid dt-3" style="margin-top:14px">{linha2}</div>'
          f'<div class="dt-grid dt-1">{transp}</div><div class="dt-grid dt-1">{obs}</div>')
+    return "\n".join(l.strip() for l in h.splitlines() if l.strip())
+
+
+def _cartao(rotulo, valor, estado="", extra=""):
+    v = str(valor).strip()
+    if not v:
+        v, estado = "—", "vazio"
+    cls = "dt-v" + (f" {estado}" if estado else "") + (" sm" if extra == "sm" else "")
+    card = "dt-card" + (" dt-bad" if estado == "bad" else "")
+    return f'<div class="{card}"><div class="dt-l">{rotulo}</div><div class="{cls}">{esc(v)}</div></div>'
+
+
+def html_detalhes_conserto(r, info):
+    """Grade 3x3 + transportadora em largura total (mesmo padrão da Consulta Faturamento)."""
+    col = info.get("coleta") or {}
+    transp = (col.get("transp") or "").strip()
+    transp = "" if transp == "-" else transp
+    pend = r["Pendência"].strip() or "Sem pendência"
+    c = [
+        _cartao("🧾 Nota do Cliente", r["Nota cliente"]),
+        _cartao("📥 Data de Recebimento", r["Recebimento"]),
+        _cartao("🚧 Pendência / Bloqueio", pend, "bad" if r["_pend"] else "ok"),
+        _cartao("👤 Entrada realizada por", r["Entrada por"]),
+        _cartao("📅 Data de Entrada", r["Data entrada"]),
+        _cartao("🛠️ Liberado pela Assistência", "Sim" if r["_lib"] else "Não", "ok" if r["_lib"] else "vazio"),
+        _cartao("🔖 NF de Retorno", r["NF retorno"]),
+        _cartao("🧾 Emissão da NF de Saída", r["Emissão NF saída"]),
+        _cartao("✅ Data da Coleta", col.get("data_col") or "Ainda não coletada",
+                "" if col.get("data_col") else "vazio"),
+    ]
+    grade = "".join(f'<div class="dt-grid dt-3"{" style=margin-top:14px" if i else ""}>{"".join(c[i * 3:i * 3 + 3])}</div>'
+                    for i in range(3))
+    tr = _cartao("🏢 Transportadora", transp or "Não informada", "" if transp else "vazio", "sm")
+    h = CSS_DET + grade + f'<div class="dt-grid dt-1">{tr}</div>'
     return "\n".join(l.strip() for l in h.splitlines() if l.strip())
 
 
@@ -927,19 +964,6 @@ with aba4:
 
                 st.markdown("---")
                 st.markdown("### 🔍 Detalhes:")
-                d1, d2, d3 = st.columns(3)
-                d1.metric("Nota do Cliente", r["Nota cliente"])
-                d2.metric("Data de Recebimento", r["Recebimento"] or "-")
-                d3.metric("Pendência / Bloqueio", r["Pendência"] or "Sem pendência")
-                d4, d5 = st.columns(2)
-                d4.metric("Entrada realizada por", r["Entrada por"] or "-")
-                d5.metric("Data de Entrada", r["Data entrada"] or "-")
-                d6, d7, d8 = st.columns(3)
-                d6.metric("Liberado pela Assistência", "Sim" if r["_lib"] else "Não")
-                d7.metric("NF de Retorno", r["NF retorno"] or "-")
-                d8.metric("Emissão da NF de Saída", r["Emissão NF saída"] or "-")
-                d9, d10 = st.columns(2)
-                d9.metric("Data da Coleta", info["coleta"].get("data_col") or "-")
-                d10.metric("Transportadora", info["coleta"].get("transp") or "-")
+                st.markdown(html_detalhes_conserto(r, info), unsafe_allow_html=True)
 
 st.markdown("Desenvolvido por Diego Elvis | Versão R.2.0 de 10.26", unsafe_allow_html=True)
