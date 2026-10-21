@@ -1,6 +1,9 @@
 import datetime
+import hashlib
+import hmac
 import json
 import re
+import time
 import unicodedata
 
 from html import escape as esc
@@ -510,6 +513,31 @@ def html_detalhes_conserto(r, info):
     return "\n".join(l.strip() for l in h.splitlines() if l.strip())
 
 
+ABAS_RESTRITAS = {"pendentes", "dashboard"}  # Consulta e Conserto são sempre visíveis
+
+
+def verifica_senha(informada, cfg):
+    """Confere a senha informada com 'senha_hash' (recomendado) ou 'senha' (texto simples) do Secrets."""
+    h = cfg.get("senha_hash")
+    if h:
+        try:
+            _, iteracoes, sal, esperado = str(h).split("$")
+            calc = hashlib.pbkdf2_hmac("sha256", informada.encode(), sal.encode(), int(iteracoes)).hex()
+            return hmac.compare_digest(calc, esperado)
+        except Exception:
+            return False
+    senha = cfg.get("senha")
+    return bool(senha) and hmac.compare_digest(str(senha).encode(), informada.encode())
+
+
+def abas_do_usuario(cfg):
+    """'todas' libera Pendentes e Dashboard; ou uma lista, ex.: ["pendentes"]."""
+    abas = cfg.get("abas", "todas")
+    if isinstance(abas, str):
+        return set(ABAS_RESTRITAS) if abas.strip().lower() == "todas" else {abas.strip().lower()} & ABAS_RESTRITAS
+    return {str(a).strip().lower() for a in abas} & ABAS_RESTRITAS
+
+
 # --- APLICAÇÃO DO BANNER CORPORATIVO ---
 st.markdown("""
     <div class="header-banner">
@@ -528,15 +556,60 @@ except Exception as e:
     st.error(f"Erro ao conectar com a planilha: {e}")
     st.stop()
 
-topo1, topo2 = st.columns([6, 1])
+AUTH_ATIVO = "usuarios" in st.secrets  # sem usuários no Secrets, o app funciona como antes (todas as abas)
+usuarios = st.secrets["usuarios"] if AUTH_ATIVO else {}
+logado = st.session_state.get("usuario")
+if logado and logado not in usuarios:  # usuário removido do Secrets
+    st.session_state.pop("usuario", None)
+    logado = None
+cfg_user = usuarios[logado] if logado else {}
+permitidas = set(ABAS_RESTRITAS) if not AUTH_ATIVO else (abas_do_usuario(cfg_user) if logado else set())
+
+topo1, topo2, topo3 = st.columns([5, 2, 1])
 topo1.success("Conexão estabelecida com a base de dados Logística 2026!")
-if topo2.button("🔄 Atualizar"):
+erro_login = ""
+if AUTH_ATIVO:
+    with topo2:
+        if logado:
+            st.caption(f"👤 {cfg_user.get('nome', logado)}")
+            if st.button("Sair"):
+                st.session_state.pop("usuario", None)
+                st.rerun()
+        else:
+            with st.popover("🔐 Entrar (colaboradores)"):
+                with st.form("form_login"):
+                    u_in = st.text_input("Usuário").strip().lower()
+                    p_in = st.text_input("Senha", type="password")
+                    entrou = st.form_submit_button("Entrar")
+            if entrou:
+                if st.session_state.get("tentativas", 0) >= 5:
+                    erro_login = "Muitas tentativas incorretas. Aguarde e recarregue a página."
+                elif u_in in usuarios and verifica_senha(p_in, usuarios[u_in]):
+                    st.session_state["usuario"] = u_in
+                    st.session_state["tentativas"] = 0
+                    st.rerun()
+                else:
+                    st.session_state["tentativas"] = st.session_state.get("tentativas", 0) + 1
+                    time.sleep(1.5)
+                    erro_login = "Usuário ou senha inválidos."
+if topo3.button("🔄 Atualizar"):
     st.cache_data.clear()
     st.rerun()
+if erro_login:
+    st.error(erro_login)
+if AUTH_ATIVO and not logado:
+    st.info("🔒 Acesso externo: as abas **Pendentes de coleta** e **Dashboard** são exclusivas para colaboradores. "
+            "Se você é da empresa, clique em **Entrar** com seu usuário e senha.")
 
-# ordem na tela: Consulta, Pendentes, Conserto/Reparo, Dashboard (aba3 = Dashboard, aba4 = Conserto)
-aba1, aba2, aba4, aba3 = st.tabs(
-    ["🔎 Consulta Faturamento", "⏳ Pendentes de coleta", "🔧 Conserto/Reparo", "📊 Dashboard"])
+# ordem na tela: Consulta, Pendentes, Conserto/Reparo, Dashboard
+chaves, nomes = ["consulta"], ["🔎 Consulta Faturamento"]
+if "pendentes" in permitidas:
+    chaves.append("pendentes"); nomes.append("⏳ Pendentes de coleta")
+chaves.append("conserto"); nomes.append("🔧 Conserto/Reparo")
+if "dashboard" in permitidas:
+    chaves.append("dashboard"); nomes.append("📊 Dashboard")
+T = dict(zip(chaves, st.tabs(nomes)))
+aba1, aba2, aba3, aba4 = T["consulta"], T.get("pendentes"), T.get("dashboard"), T["conserto"]
 
 # ================= 1. CONSULTA (código original) =================
 with aba1:
@@ -618,46 +691,47 @@ with aba1:
                 st.error(f"⚠️ Esta NF consta como PENDENTE de coleta há {int(r['Dias pendente'])} dia(s) — Status: {r['Status']}")
 
 # ================= 2. PENDENTES =================
-with aba2:
-    f1, f2, f3, f4 = st.columns(4)
-    frete = f1.multiselect("Frete", sorted(pend["Frete"].unique()))
-    status = f2.multiselect("Status", sorted(pend["Status"].unique()))
-    cliente = f3.multiselect("Cliente", sorted(pend["Cliente"].unique()))
-    so_atr = f4.toggle(f"Só atrasados (> {PRAZO_ALERTA} dias)")
+if aba2 is not None:
+    with aba2:
+        f1, f2, f3, f4 = st.columns(4)
+        frete = f1.multiselect("Frete", sorted(pend["Frete"].unique()))
+        status = f2.multiselect("Status", sorted(pend["Status"].unique()))
+        cliente = f3.multiselect("Cliente", sorted(pend["Cliente"].unique()))
+        so_atr = f4.toggle(f"Só atrasados (> {PRAZO_ALERTA} dias)")
 
-    v = pend.copy()
-    if frete: v = v[v["Frete"].isin(frete)]
-    if status: v = v[v["Status"].isin(status)]
-    if cliente: v = v[v["Cliente"].isin(cliente)]
-    if so_atr: v = v[v["Atrasado"]]
+        v = pend.copy()
+        if frete: v = v[v["Frete"].isin(frete)]
+        if status: v = v[v["Status"].isin(status)]
+        if cliente: v = v[v["Cliente"].isin(cliente)]
+        if so_atr: v = v[v["Atrasado"]]
 
-    st.caption(f"{len(v)} caso(s) pendente(s)")
-    cols = ["NF", "Cliente", "Frete", "Transporte", "Ordem de coleta",
-            "Data Solicitação", "Dias pendente"]
-    v = v.sort_values("Dias pendente", ascending=False)[cols]
+        st.caption(f"{len(v)} caso(s) pendente(s)")
+        cols = ["NF", "Cliente", "Frete", "Transporte", "Ordem de coleta",
+                "Data Solicitação", "Dias pendente"]
+        v = v.sort_values("Dias pendente", ascending=False)[cols]
 
-    def cor(row):
-        d = row["Dias pendente"]
-        c = "#fde2e2" if d > 5 else "#fff3d6" if d > PRAZO_ALERTA else ""
-        return [f"background-color:{c}"] * len(row)
+        def cor(row):
+            d = row["Dias pendente"]
+            c = "#fde2e2" if d > 5 else "#fff3d6" if d > PRAZO_ALERTA else ""
+            return [f"background-color:{c}"] * len(row)
 
-    sty = (v.style.apply(cor, axis=1)
-           .format({"Data Solicitação": lambda d: d.strftime("%d/%m/%Y") if pd.notna(d) else "-",
-                    "Dias pendente": "{:.0f}"}, escape="html", na_rep="-")
-           .hide(axis="index")
-           .set_properties(**{"text-align": "center"})
-           .set_table_styles([{"selector": "th", "props": [("text-align", "center")]}]))
-    html_tab = "\n".join(l.strip() for l in sty.to_html().splitlines() if l.strip())
-    st.markdown(
-        """<style>
-        .tabela-pend{max-height:620px;overflow:auto;border-radius:8px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.08)}
-        .tabela-pend table{width:100%;border-collapse:collapse;font-size:14px}
-        .tabela-pend th{position:sticky;top:0;background:#1b4f93;color:#fff;padding:10px 8px;z-index:1}
-        .tabela-pend td{padding:8px;border-bottom:1px solid #e4e9f0;text-align:center}
-        </style>""" + f'<div class="tabela-pend">{html_tab}</div>',
-        unsafe_allow_html=True)
-    st.download_button("⬇️ Baixar CSV", v.to_csv(index=False).encode("utf-8-sig"),
-                       "pendentes.csv", "text/csv")
+        sty = (v.style.apply(cor, axis=1)
+               .format({"Data Solicitação": lambda d: d.strftime("%d/%m/%Y") if pd.notna(d) else "-",
+                        "Dias pendente": "{:.0f}"}, escape="html", na_rep="-")
+               .hide(axis="index")
+               .set_properties(**{"text-align": "center"})
+               .set_table_styles([{"selector": "th", "props": [("text-align", "center")]}]))
+        html_tab = "\n".join(l.strip() for l in sty.to_html().splitlines() if l.strip())
+        st.markdown(
+            """<style>
+            .tabela-pend{max-height:620px;overflow:auto;border-radius:8px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+            .tabela-pend table{width:100%;border-collapse:collapse;font-size:14px}
+            .tabela-pend th{position:sticky;top:0;background:#1b4f93;color:#fff;padding:10px 8px;z-index:1}
+            .tabela-pend td{padding:8px;border-bottom:1px solid #e4e9f0;text-align:center}
+            </style>""" + f'<div class="tabela-pend">{html_tab}</div>',
+            unsafe_allow_html=True)
+        st.download_button("⬇️ Baixar CSV", v.to_csv(index=False).encode("utf-8-sig"),
+                           "pendentes.csv", "text/csv")
 
 # ================= 3. DASHBOARD =================
 _uid = count(1)
@@ -897,25 +971,26 @@ def montar_dashboard(pend, r2, fat, sel, hoje):
     return "\n".join(l.strip() for l in html_all.splitlines() if l.strip())
 
 
-with aba3:
-    hoje = pd.Timestamp.today().normalize()
-    try:
-        rep_d = df_conserto(ler_valores(ABA_CONSERTO))
-    except Exception:
-        rep_d = None
-        st.warning(f"Não consegui ler a aba '{ABA_CONSERTO}'; os indicadores de conserto ficam vazios.")
-    r2 = sem_ignorados(dados_conserto(rep_d, mapa_coletas(todos_dados), hoje))
-    fat = sem_ignorados(dados_faturadas(todos_dados, hoje))
-    pend_d = sem_ignorados(pend)
+if aba3 is not None:
+    with aba3:
+        hoje = pd.Timestamp.today().normalize()
+        try:
+            rep_d = df_conserto(ler_valores(ABA_CONSERTO))
+        except Exception:
+            rep_d = None
+            st.warning(f"Não consegui ler a aba '{ABA_CONSERTO}'; os indicadores de conserto ficam vazios.")
+        r2 = sem_ignorados(dados_conserto(rep_d, mapa_coletas(todos_dados), hoje))
+        fat = sem_ignorados(dados_faturadas(todos_dados, hoje))
+        pend_d = sem_ignorados(pend)
 
-    meses = sorted(fat["mes"].dropna().unique(), reverse=True)
-    sel = None
-    if meses:
-        atual = hoje.to_period("M")
-        _, cs, _ = st.columns([2, 1, 2])
-        sel = cs.selectbox("Mês de referência (notas faturadas)", meses,
-                           index=meses.index(atual) if atual in meses else 0, format_func=_nome_mes)
-    st.markdown(montar_dashboard(pend_d, r2, fat, sel, hoje), unsafe_allow_html=True)
+        meses = sorted(fat["mes"].dropna().unique(), reverse=True)
+        sel = None
+        if meses:
+            atual = hoje.to_period("M")
+            _, cs, _ = st.columns([2, 1, 2])
+            sel = cs.selectbox("Mês de referência (notas faturadas)", meses,
+                               index=meses.index(atual) if atual in meses else 0, format_func=_nome_mes)
+        st.markdown(montar_dashboard(pend_d, r2, fat, sel, hoje), unsafe_allow_html=True)
 
 # ================= 4. CONSERTO / REPARO (consulta por NF + timeline) =================
 with aba4:
