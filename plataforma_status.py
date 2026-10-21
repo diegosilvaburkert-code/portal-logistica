@@ -457,8 +457,9 @@ if topo2.button("🔄 Atualizar"):
     st.cache_data.clear()
     st.rerun()
 
-aba1, aba2, aba3, aba4 = st.tabs(
-    ["🔎 Consulta Faturamento", "⏳ Pendentes de coleta", "📊 Dashboard", "🔧 Conserto/Reparo"])
+# ordem na tela: Consulta, Pendentes, Conserto/Reparo, Dashboard (aba3 = Dashboard, aba4 = Conserto)
+aba1, aba2, aba4, aba3 = st.tabs(
+    ["🔎 Consulta Faturamento", "⏳ Pendentes de coleta", "🔧 Conserto/Reparo", "📊 Dashboard"])
 
 # ================= 1. CONSULTA (código original) =================
 with aba1:
