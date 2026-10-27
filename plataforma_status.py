@@ -215,13 +215,13 @@ st.markdown(f"""
 
         /* Botões da Sidebar */
         section[data-testid="stSidebar"] .stButton {{
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }}
         section[data-testid="stSidebar"] .stButton button {{
-            width: 100%;
+            width: 100% !important;
             justify-content: {"flex-start" if expandido else "center"} !important;
             border: none;
-            border-radius: 12px !important;
+            border-radius: 8px !important;
             padding: {"0.75rem 1rem" if expandido else "0.75rem 0rem"} !important;
             background: transparent;
             box-shadow: none;
@@ -238,12 +238,12 @@ st.markdown(f"""
             background: #eef1ff;
         }}
 
-        /* BOTÃO SELECIONADO: Retângulo azul cobrindo toda a linha */
+        /* BOTÃO SELECIONADO: Retângulo completo cobrindo toda a largura da linha */
         section[data-testid="stSidebar"] .stButton button[kind="primary"],
         section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] {{
             background: #d8e2ff !important;
-            border: 1px solid #b8c9fd !important;
-            border-radius: 12px !important;
+            border: none !important;
+            border-radius: 8px !important;
             width: 100% !important;
             box-shadow: none !important;
         }}
@@ -550,7 +550,7 @@ def html_detalhes_pedido(cards, data_col):
               + cartao("📅 Data do Contato", cards["Data Contato"], nao)
               + cartao("✅ Data da Coleta", data_col or "Ainda não coletada", ("Ainda não coletada",)))
     transp = cartao("🏢 Transportador / Contato", cards["Transportador"], nao, "sm")
-    sem_obs = "Nenhuma obs registrada para esta nota."
+    sem_obs = "Nenhuma observação registrada para esta nota."
     obs = cartao("💬 Observações Gerais", cards["Observações"], (sem_obs,), "obs")
     h = (CSS_DET + f'<div class="dt-grid dt-3">{linha1}</div><div class="dt-grid dt-3" style="margin-top:14px">{linha2}</div>'
          f'<div class="dt-grid dt-1">{transp}</div><div class="dt-grid dt-1">{obs}</div>')
