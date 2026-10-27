@@ -213,7 +213,7 @@ st.markdown(f"""
             padding: 1rem 0.6rem 4rem 0.6rem !important;
         }}
 
-        /* Botões da Sidebar em formato pílula */
+        /* Botões da Sidebar */
         section[data-testid="stSidebar"] .stButton {{
             margin-bottom: 8px;
         }}
@@ -221,7 +221,7 @@ st.markdown(f"""
             width: 100%;
             justify-content: {"flex-start" if expandido else "center"} !important;
             border: none;
-            border-radius: 999px !important;
+            border-radius: 12px !important;
             padding: {"0.75rem 1rem" if expandido else "0.75rem 0rem"} !important;
             background: transparent;
             box-shadow: none;
@@ -238,16 +238,18 @@ st.markdown(f"""
             background: #eef1ff;
         }}
 
-        /* BOTÃO SELECIONADO (Estilo pílula branca em destaque igual à referência) */
+        /* BOTÃO SELECIONADO: Retângulo azul cobrindo toda a linha */
         section[data-testid="stSidebar"] .stButton button[kind="primary"],
         section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] {{
-            background: #ffffff !important;
-            border-radius: 999px !important;
-            box-shadow: 0 6px 20px rgba(79, 103, 232, 0.18) !important;
+            background: #d8e2ff !important;
+            border: 1px solid #b8c9fd !important;
+            border-radius: 12px !important;
+            width: 100% !important;
+            box-shadow: none !important;
         }}
         .stApp section[data-testid="stSidebar"] .stButton button[kind="primary"] p,
         .stApp section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] p {{
-            color: #4f67e8 !important;
+            color: #2b3a6b !important;
             font-weight: 700 !important;
         }}
 
@@ -548,7 +550,7 @@ def html_detalhes_pedido(cards, data_col):
               + cartao("📅 Data do Contato", cards["Data Contato"], nao)
               + cartao("✅ Data da Coleta", data_col or "Ainda não coletada", ("Ainda não coletada",)))
     transp = cartao("🏢 Transportador / Contato", cards["Transportador"], nao, "sm")
-    sem_obs = "Nenhuma observação registrada para esta nota."
+    sem_obs = "Nenhuma obs registrada para esta nota."
     obs = cartao("💬 Observações Gerais", cards["Observações"], (sem_obs,), "obs")
     h = (CSS_DET + f'<div class="dt-grid dt-3">{linha1}</div><div class="dt-grid dt-3" style="margin-top:14px">{linha2}</div>'
          f'<div class="dt-grid dt-1">{transp}</div><div class="dt-grid dt-1">{obs}</div>')
