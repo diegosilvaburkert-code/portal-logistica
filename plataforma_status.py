@@ -230,7 +230,7 @@ st.markdown("""
         /* Container Customizado do Status de Conexão na Sidebar */
         .sidebar-status-container {
             position: absolute;
-            bottom: 01px;
+            bottom: -30px;
             left: 00px;
             background-color: #d1e7dd;
             color: #0f5132;
@@ -241,7 +241,7 @@ st.markdown("""
             border: 1px solid #badbcc;
             display: inline-flex;
             align-items: center;
-            gap: 5px;
+            gap: 1px;
         }
     </style>
 """, unsafe_allow_html=True)
