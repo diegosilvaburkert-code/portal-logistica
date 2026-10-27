@@ -547,7 +547,7 @@ def _cartao(rotulo, valor, estado="", extra=""):
 
 
 def html_detalhes_conserto(r, info):
-    """Grade 3x3 + transportadora em largura total (mesmo padrão da Consulta Faturamento)."""
+    """Grade 3x3 + transportadora em largura total (mesmo padrão da Consulta Saída)."""
     col = info.get("coleta") or {}
     transp = (col.get("transp") or "").strip()
     transp = "" if transp == "-" else transp
@@ -656,7 +656,7 @@ if AUTH_ATIVO and not logado:
             "Se você é da empresa, clique em **Entrar** com seu usuário e senha.")
 
 # ordem na tela: Consulta, Pendentes, Conserto/Reparo, Dashboard
-chaves, nomes = ["consulta"], ["🔎 Consulta Faturamento"]
+chaves, nomes = ["consulta"], ["🔎 Consulta Saída"]
 if "pendentes" in permitidas:
     chaves.append("pendentes"); nomes.append("⏳ Pendentes de coleta")
 chaves.append("conserto"); nomes.append("🔧 Conserto/Reparo")
