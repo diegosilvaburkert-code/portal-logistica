@@ -287,7 +287,7 @@ css_template = """
         /* Status de Conexão na Rodapé da Sidebar */
         .sidebar-status-container {
             position: absolute;
-            bottom: 15px;
+            bottom: -500px;
             left: 50%;
             transform: translateX(-50%);
             background-color: #d1e7dd;
