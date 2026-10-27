@@ -629,7 +629,7 @@ def html_detalhes_conserto(r, info):
         _cartao("🔖 NF de Retorno", r["NF retorno"]),
         _cartao("🧾 Emissão da NF de Saída", r["Emissão NF saída"]),
         _cartao("✅ Data da Coleta", col.get("data_col") or "Ainda não coletada",
-                "" if col.get("data_col"] else "vazio"),
+                "" if col.get("data_col") else "vazio"),
     ]
     grade = "".join(f'<div class="dt-grid dt-3"{" style=margin-top:14px" if i else ""}>{"".join(c[i * 3:i * 3 + 3])}</div>'
                     for i in range(3))
