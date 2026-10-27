@@ -16,106 +16,101 @@ import streamlit as st
 LINK_PLANILHA = "https://google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En0FEYfpVs-58e9S0/edit?gid=0#gid=0"
 NOME_DA_ABA = "controle"
 ABA_PENDENTES = "Pendentes (FUP)"
-ABA_CONSERTO = "Retorno Conserto"  # nome exato da aba de reparos na planilha
-CLIENTES_IGNORADOS = ["burkert"]  # clientes excluídos do Dashboard (parte do nome, sem acento/maiúscula)
-PRAZO_ALERTA = 3  # dias sem coleta a partir dos quais o caso é considerado atrasado
+ABA_CONSERTO = "Retorno Conserto"
+CLIENTES_IGNORADOS = ["burkert"]
+PRAZO_ALERTA = 3
 
 st.set_page_config(page_title="Portal de Status - Logística", page_icon="📦", layout="wide")
 
-# ======================= ESTADO DA SIDEBAR (EXPANDIDO / RECOLHIDO) =======================
+# ======================= ESTADO DA SIDEBAR =======================
 if "sidebar_expanded" not in st.session_state:
     st.session_state["sidebar_expanded"] = True
 
 expandido = st.session_state["sidebar_expanded"]
-sb_width = "270px" if expandido else "90px"
-sb_justify = "space-between" if expandido else "center"
-btn_justify = "flex-start" if expandido else "center"
-btn_padding = "0.75rem 1rem" if expandido else "0.75rem 0rem"
-btn_text_align = "left" if expandido else "center"
-btn_font_size = "15px" if expandido else "20px"
+sb_width = "270px" if expandido else "80px"
 
-# ======================= ESTILOS CSS (PADRÃO LOGÍSTICA / PIONEERS) =======================
-css_template = """
+# ======================= ESTILOS CSS REATIVOS =======================
+st.markdown(f"""
     <style>
-        :root {
+        :root {{
             --azul: #7c93fb;
             --azul-esc: #4f67e8;
             --rosa: #f06aa8;
-        }
-        .stApp {
+        }}
+        .stApp {{
             background: linear-gradient(135deg, #f0f3ff 0%, #e3e9fd 100%);
-        }
-        header[data-testid="stHeader"] {
+        }}
+        header[data-testid="stHeader"] {{
             background: transparent !important;
-        }
-        .block-container {
+        }}
+        .block-container {{
             padding-top: 1.6rem;
             max-width: 1500px;
-        }
-        .header-banner {
+        }}
+        .header-banner {{
             background: linear-gradient(110deg, #8aa0ff, #4f67e8);
             border-radius: 22px;
             padding: 28px;
             box-shadow: 0 14px 32px rgba(79, 103, 232, .30);
             margin-bottom: 25px;
-        }
-        .header-banner h1 {
+        }}
+        .header-banner h1 {{
             color: white !important;
             font-size: 24px !important;
             margin: 0 !important;
             letter-spacing: 1px;
             font-weight: 700;
             text-align: center !important;
-        }
-        .header-banner p {
+        }}
+        .header-banner p {{
             margin: 5px 0 0 0 !important;
             font-size: 14px;
             opacity: 0.9;
             text-align: center !important;
-        }
+        }}
 
-        /* CENTRALIZAÇÃO GLOBAL DE TEXTOS E ELEMENTOS */
-        .stApp h2, .stApp h3, .stApp h4, .stApp p, .stMarkdown p {
+        /* CENTRALIZAÇÃO GLOBAL */
+        .stApp h2, .stApp h3, .stApp h4, .stApp p, .stMarkdown p {{
             text-align: center !important;
             justify-content: center !important;
-        }
-        .stAlert { 
+        }}
+        .stAlert {{ 
             border-radius: 8px; 
             box-shadow: 0 4px 6px rgba(0,0,0,0.05);
             text-align: center !important;
-        }
-        .stAlert > div {
+        }}
+        .stAlert > div {{
             justify-content: center !important;
             text-align: center !important;
-        }
-        [data-testid="stWidgetLabel"] {
+        }}
+        [data-testid="stWidgetLabel"] {{
             text-align: center !important;
             display: block !important;
             width: 100% !important;
-        }
-        [data-testid="stTextInput"] div[data-baseweb="input"] {
+        }}
+        [data-testid="stTextInput"] div[data-baseweb="input"] {{
             max-width: 400px !important;
             margin: 0 auto !important;
-        }
-        [data-testid="stTextInput"] input {
+        }}
+        [data-testid="stTextInput"] input {{
             text-align: center !important;
-        }
+        }}
 
         /* CORREÇÃO DOS METRICS */
-        [data-testid="stMetric"] {
+        [data-testid="stMetric"] {{
             text-align: center !important;
             display: flex !important;
             flex-direction: column !important;
             align-items: center !important;
             justify-content: center !important;
-        }
-        [data-testid="stMetricLabel"] {
+        }}
+        [data-testid="stMetricLabel"] {{
             text-align: center !important;
             display: block !important;
             width: 100% !important;
             justify-content: center !important;
-        }
-        [data-testid="stMetricValue"] {
+        }}
+        [data-testid="stMetricValue"] {{
             white-space: normal !important;
             word-break: break-word !important;
             overflow-wrap: break-word !important;
@@ -124,17 +119,17 @@ css_template = """
             text-align: center !important;
             display: block !important;
             width: 100% !important;
-        }
+        }}
 
-        /* Estrutura do Stepper */
-        .stepper-wrapper {
+        /* STEPPER */
+        .stepper-wrapper {{
             display: flex;
             justify-content: space-between;
             margin-top: 30px;
             margin-bottom: 30px;
             position: relative;
-        }
-        .stepper-wrapper::before {
+        }}
+        .stepper-wrapper::before {{
             content: "";
             position: absolute;
             top: 21px;
@@ -144,16 +139,16 @@ css_template = """
             background-color: #dbdbdb;
             border-radius: 10px;
             z-index: 1;
-        }
-        .stepper-item {
+        }}
+        .stepper-item {{
             position: relative;
             display: flex;
             flex-direction: column;
             align-items: center;
             flex: 1;
             z-index: 3;
-        }
-        .stepper-item .step-counter {
+        }}
+        .stepper-item .step-counter {{
             position: relative;
             width: 50px;
             height: 50px;
@@ -166,27 +161,26 @@ css_template = """
             font-weight: bold;
             color: #cbd6e2;
             font-size: 18px;
-            transition: all 0.3s ease;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             z-index: 4;
-        }
-        .stepper-item .step-name {
+        }}
+        .stepper-item .step-name {{
             margin-top: 10px;
             font-size: 13px;
             font-weight: 600;
             color: #5c6b73;
             text-align: center;
-        }
-        .stepper-item.completed .step-counter {
+        }}
+        .stepper-item.completed .step-counter {{
             background-color: #00e63d;
             border-color: #00e63d;
             color: white;
-        }
-        .stepper-item.completed .step-name {
+        }}
+        .stepper-item.completed .step-name {{
             color: #4f67e8;
             font-weight: bold;
-        }
-        .stepper-line-active {
+        }}
+        .stepper-line-active {{
             position: absolute;
             top: 21px;
             left: 0;
@@ -194,131 +188,86 @@ css_template = """
             background: linear-gradient(90deg, #00c732, #00e63d);
             border-radius: 10px;
             z-index: 2;
-            transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        div[data-baseweb="tab-list"], [data-testid="stTabs"] [role="tablist"] {
-            justify-content: center !important;
-        }
+        }}
 
-        /* ===== MENU LATERAL FIXO / DINÂMICO ===== */
-        section[data-testid="stSidebar"] {
-            width: __SB_WIDTH__ !important;
-            min-width: __SB_WIDTH__ !important;
-            max-width: __SB_WIDTH__ !important;
-            transform: none !important;
-            visibility: visible !important;
-            background: #ffffff;
+        /* ===== SIDEBAR EXPANSÍVEL DINÂMICA ===== */
+        section[data-testid="stSidebar"] {{
+            width: {sb_width} !important;
+            min-width: {sb_width} !important;
+            max-width: {sb_width} !important;
+            background: #ffffff !important;
             border-radius: 0 26px 26px 0;
             box-shadow: 8px 0 30px rgba(79, 103, 232, .14);
-            transition: width 0.3s ease, min-width 0.3s ease, max-width 0.3s ease;
-            position: relative !important;
-        }
+            transition: width 0.2s ease-in-out, min-width 0.2s ease-in-out;
+        }}
 
-        /* Oculta completamente controles nativos sobrepostos do Streamlit */
+        /* Oculta controles nativos redundantes do Streamlit */
         [data-testid="stSidebarCollapseButton"],
         [data-testid="stSidebarCollapsedControl"],
         [data-testid="collapsedControl"],
-        [data-testid="stSidebarResizeHandle"] {
+        [data-testid="stSidebarResizeHandle"] {{
             display: none !important;
-        }
+        }}
 
-        [data-testid="stSidebarUserContent"] {
-            padding: 1.2rem 0.8rem 3.5rem 0.8rem !important;
-        }
+        [data-testid="stSidebarUserContent"] {{
+            padding: 1rem 0.6rem 4rem 0.6rem !important;
+        }}
 
-        /* Cabeçalho do Menu Lateral */
-        .sb-header {
-            display: flex;
-            align-items: center;
-            justify-content: __SB_JUSTIFY__;
-            padding: 4px 6px 16px 6px;
-            border-bottom: 1px solid #e8edfb;
-            margin-bottom: 20px;
-        }
-        .sb-logo {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            white-space: nowrap;
-            font-size: 22px;
-        }
-        .sb-logo span {
-            font-size: 11px;
-            font-weight: 800;
-            letter-spacing: 1.2px;
-            line-height: 1.2;
-            color: #4f67e8;
-        }
-
-        /* Botões da Sidebar */
-        section[data-testid="stSidebar"] .stButton {
+        /* Botões da Sidebar com alinhamento dinâmico */
+        section[data-testid="stSidebar"] .stButton {{
             margin-bottom: 8px;
-        }
-        section[data-testid="stSidebar"] .stButton button {
+        }}
+        section[data-testid="stSidebar"] .stButton button {{
             width: 100%;
-            justify-content: __BTN_JUSTIFY__ !important;
+            justify-content: {"flex-start" if expandido else "center"} !important;
             border: none;
             border-radius: 14px;
-            padding: __BTN_PADDING__ !important;
+            padding: {"0.75rem 1rem" if expandido else "0.75rem 0rem"} !important;
             background: transparent;
             box-shadow: none;
             transition: all 0.2s;
-        }
-        .stApp section[data-testid="stSidebar"] .stButton button p {
-            text-align: __BTN_TEXT_ALIGN__ !important;
-            font-size: __BTN_FONT_SIZE__;
+        }}
+        .stApp section[data-testid="stSidebar"] .stButton button p {{
+            text-align: {"left" if expandido else "center"} !important;
+            font-size: {"15px" if expandido else "20px"};
             font-weight: 600;
             color: #5b6b8c;
             margin: 0;
-        }
-        section[data-testid="stSidebar"] .stButton button:hover {
+        }}
+        section[data-testid="stSidebar"] .stButton button:hover {{
             background: #eef1ff;
-        }
+        }}
         section[data-testid="stSidebar"] .stButton button[kind="primary"],
-        section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] {
+        section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] {{
             background: linear-gradient(90deg, #8aa0ff, #4f67e8);
             box-shadow: 0 8px 18px rgba(79, 103, 232, .32);
-        }
+        }}
         .stApp section[data-testid="stSidebar"] .stButton button[kind="primary"] p,
-        .stApp section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] p {
+        .stApp section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] p {{
             color: #fff !important;
-        }
+        }}
 
-        /* Status de Conexão na Rodapé da Sidebar */
-        .sidebar-status-container {
+        /* Status rodapé sidebar */
+        .sidebar-status-container {{
             position: absolute;
-            bottom: -400px;
+            bottom: 15px;
             left: 50%;
             transform: translateX(-50%);
             background-color: #d1e7dd;
             color: #0f5132;
-            padding: 4px 10px;
+            padding: 4px 8px;
             border-radius: 8px;
-            font-size: 11px;
+            font-size: {"11px" if expandido else "10px"};
             font-weight: 700;
             border: 1px solid #badbcc;
             white-space: nowrap;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-        }
+        }}
     </style>
-"""
-
-css_final = (css_template
-             .replace("__SB_WIDTH__", sb_width)
-             .replace("__SB_JUSTIFY__", sb_justify)
-             .replace("__BTN_JUSTIFY__", btn_justify)
-             .replace("__BTN_PADDING__", btn_padding)
-             .replace("__BTN_TEXT_ALIGN__", btn_text_align)
-             .replace("__BTN_FONT_SIZE__", btn_font_size))
-
-st.markdown(css_final, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 
 @st.cache_resource
 def conectar_google_sheets():
-    """Conecta usando as credenciais da aba Secrets do Streamlit Cloud."""
     info_json = st.secrets["gspread_credentials"]["json_string"]
     dic_chaves = json.loads(info_json, strict=False)
     if "private_key" in dic_chaves:
@@ -363,7 +312,6 @@ def _norm(t):
 
 
 def df_conserto(valores):
-    """Lê a aba de reparos pelos NOMES das colunas (se alguém inserir/mover colunas, continua certo)."""
     ini, cab = 2, None
     for i, l in enumerate(valores[:8]):
         if any("nota do cliente" in _norm(c) for c in l):
@@ -402,7 +350,6 @@ def df_conserto(valores):
 
 
 def mapa_coletas(valores):
-    """Aba 'controle': liga o nº da NF (col. N.F.) à data da coleta (DATA Col.), solicitação e transportadora."""
     m = {}
     for l in valores[1:]:
         l = list(l) + [""] * 9
@@ -416,7 +363,6 @@ def mapa_coletas(valores):
 
 
 def status_conserto(r, coletas=None):
-    """Fluxo sequencial: cada fase só é considerada OK se as anteriores também estiverem OK."""
     coletas = coletas or {}
     if not (r["Nota cliente"] and r["Cliente"]):
         return {"etapa": 0, "status": "⚪ Dados incompletos", "bloqueado": False, "coleta": {},
@@ -661,7 +607,7 @@ def abas_do_usuario(cfg):
     return {str(a).strip().lower() for a in abas} & ABAS_RESTRITAS
 
 
-# --- APLICAÇÃO DO BANNER CORPORATIVO ---
+# --- BANNER CORPORATIVO ---
 st.markdown("""
     <div class="header-banner">
         <h1>WELCOME TO THE PIONEERS OF FLOW</h1>
