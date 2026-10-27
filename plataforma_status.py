@@ -201,35 +201,50 @@ st.markdown("""
 
         /* ===== MENU LATERAL: recolhido (só ícones) e expande ao passar o mouse ===== */
         section[data-testid="stSidebar"]{
-            position:fixed!important;top:0;left:0;height:100vh;
-            width:78px!important;min-width:78px!important;max-width:none!important;
-            transform:none!important;margin-left:0!important;visibility:visible!important;
+            position:fixed!important;top:0!important;left:0!important;bottom:0!important;height:100vh!important;
+            width:78px!important;min-width:78px!important;max-width:78px!important;
+            transform:none!important;margin:0!important;visibility:visible!important;
             background:#ffffff;border-radius:0 28px 28px 0;
             box-shadow:8px 0 30px rgba(79,103,232,.16);
-            transition:width .28s cubic-bezier(.4,0,.2,1);overflow:hidden;z-index:1000001}
-        section[data-testid="stSidebar"]:hover{width:272px!important}
-        section[data-testid="stSidebar"] > div{width:100%!important}
+            transition:width .28s cubic-bezier(.4,0,.2,1),max-width .28s cubic-bezier(.4,0,.2,1);
+            overflow:hidden!important;z-index:1000001}
+        section[data-testid="stSidebar"]:hover{width:272px!important;min-width:272px!important;max-width:272px!important}
+        /* conteúdo interno com largura FIXA: não reflui nem quebra o texto; o painel só "revela" mais área */
+        section[data-testid="stSidebar"] > div,
+        section[data-testid="stSidebar"] [data-testid="stSidebarContent"]{
+            width:272px!important;min-width:272px!important;height:100vh!important;
+            display:block!important;overflow:hidden!important}
         [data-testid="stSidebarCollapseButton"],[data-testid="stSidebarCollapsedControl"],
         [data-testid="collapsedControl"],[data-testid="stSidebarHeader"]{display:none!important}
-        [data-testid="stSidebarUserContent"]{padding:1.2rem .65rem!important}
+        [data-testid="stSidebarUserContent"]{padding:1.2rem .65rem!important;width:272px!important;box-sizing:border-box}
+        section[data-testid="stSidebar"] [data-testid="stWidgetLabel"]{display:none!important}
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:0!important;align-items:flex-start!important}
 
         .sb-logo{display:flex;align-items:center;gap:12px;padding:4px 14px 22px;white-space:nowrap;
             font-size:26px;border-bottom:1px solid #e8edfb;margin-bottom:18px}
         .sb-logo span{font-size:12px;font-weight:800;letter-spacing:1.6px;line-height:1.25;color:#4f67e8}
-        .sb-dica{font-size:11px;color:#9aa7c7;white-space:nowrap;padding:18px 16px 0;overflow:hidden}
+        .sb-dica{font-size:11px;color:#9aa7c7;white-space:nowrap;padding:18px 16px 0;opacity:0;transition:opacity .3s}
+        section[data-testid="stSidebar"]:hover .sb-dica{opacity:1}
 
-        section[data-testid="stSidebar"] div[role="radiogroup"]{display:flex;flex-direction:column;gap:8px}
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label{
-            width:100%;margin:0;padding:13px 17px;border-radius:16px;cursor:pointer;
-            white-space:nowrap;overflow:hidden;justify-content:flex-start;transition:background .2s,transform .2s}
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child{display:none!important}
-        .stApp section[data-testid="stSidebar"] label p{
-            text-align:left!important;justify-content:flex-start!important;margin:0;
+        section[data-testid="stSidebar"] [role="radiogroup"]{
+            display:flex!important;flex-direction:column!important;gap:8px!important;width:250px!important}
+        section[data-testid="stSidebar"] [role="radiogroup"] label{
+            width:250px!important;margin:0!important;padding:13px 17px!important;border-radius:16px;cursor:pointer;
+            display:flex!important;align-items:center!important;justify-content:flex-start!important;
+            white-space:nowrap!important;box-sizing:border-box;transition:background .2s}
+        /* esconde a bolinha do radio (em qualquer versão do Streamlit) */
+        section[data-testid="stSidebar"] [role="radiogroup"] label > div:first-child:not([data-testid="stMarkdownContainer"]),
+        section[data-testid="stSidebar"] [role="radiogroup"] label [data-baseweb="radio"] > div:first-child:not([data-testid="stMarkdownContainer"]){
+            display:none!important}
+        section[data-testid="stSidebar"] [role="radiogroup"] label [data-testid="stMarkdownContainer"]{width:auto!important;margin:0!important}
+        .stApp section[data-testid="stSidebar"] [role="radiogroup"] label p{
+            text-align:left!important;justify-content:flex-start!important;margin:0!important;
+            white-space:nowrap!important;word-break:normal!important;overflow-wrap:normal!important;
             font-size:15px;font-weight:600;color:#5b6b8c}
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover{background:#eef1ff;transform:translateX(3px)}
-        section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked){
+        section[data-testid="stSidebar"] [role="radiogroup"] label:hover{background:#eef1ff}
+        section[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked){
             background:linear-gradient(90deg,#8aa0ff,#4f67e8);box-shadow:0 8px 18px rgba(79,103,232,.35)}
-        .stApp section[data-testid="stSidebar"] label:has(input:checked) p{color:#fff}
+        .stApp section[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) p{color:#fff}
 
         @media(max-width:768px){.block-container{padding-left:88px;padding-right:1rem}}
     </style>
