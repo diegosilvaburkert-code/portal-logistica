@@ -213,7 +213,7 @@ st.markdown(f"""
             padding: 1rem 0.6rem 4rem 0.6rem !important;
         }}
 
-        /* Botões da Sidebar com alinhamento dinâmico */
+        /* Botões da Sidebar */
         section[data-testid="stSidebar"] .stButton {{
             margin-bottom: 8px;
         }}
@@ -237,20 +237,24 @@ st.markdown(f"""
         section[data-testid="stSidebar"] .stButton button:hover {{
             background: #eef1ff;
         }}
+
+        /* ABA SELECIONADA: Azul claro uniforme preenchendo toda a aba */
         section[data-testid="stSidebar"] .stButton button[kind="primary"],
         section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] {{
-            background: linear-gradient(90deg, #8aa0ff, #4f67e8);
-            box-shadow: 0 8px 18px rgba(79, 103, 232, .32);
+            background: #d8e2ff !important;
+            border: 2px solid #7c93fb !important;
+            box-shadow: 0 4px 12px rgba(124, 147, 251, 0.25) !important;
         }}
         .stApp section[data-testid="stSidebar"] .stButton button[kind="primary"] p,
         .stApp section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] p {{
-            color: #fff !important;
+            color: #2b3a6b !important;
+            font-weight: 700 !important;
         }}
 
-        /* Status rodapé sidebar posicionado com -400px como solicitado */
+        /* Status rodapé sidebar */
         .sidebar-status-container {{
             position: absolute;
-            bottom: -300px;
+            bottom: -400px;
             left: 50%;
             transform: translateX(-50%);
             background-color: #d1e7dd;
@@ -797,7 +801,7 @@ if pagina == "consulta":
             p = pend[pend["NF"] == pesquisa]
             if not p.empty:
                 r = p.iloc[0]
-                st.error(f"⚠️ Esta NF consta como PENDENTE de coleta há {int(r['Dias pendente'])} dia(s) — Status: {r['Status']}")
+                st.error(f"⚠️ Эта NF consta como PENDENTE de coleta há {int(r['Dias pendente'])} dia(s) — Status: {r['Status']}")
 
 # ================= 2. PENDENTES =================
 if pagina == "pendentes":
