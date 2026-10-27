@@ -254,7 +254,7 @@ st.markdown(f"""
         /* Status rodapé sidebar */
         .sidebar-status-container {{
             position: absolute;
-            bottom: -400px;
+            bottom: -300px;
             left: 50%;
             transform: translateX(-50%);
             background-color: #d1e7dd;
