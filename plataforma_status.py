@@ -213,7 +213,7 @@ st.markdown(f"""
             padding: 1rem 0.6rem 4rem 0.6rem !important;
         }}
 
-        /* Botões da Sidebar */
+        /* Botões da Sidebar em formato pílula */
         section[data-testid="stSidebar"] .stButton {{
             margin-bottom: 8px;
         }}
@@ -221,7 +221,7 @@ st.markdown(f"""
             width: 100%;
             justify-content: {"flex-start" if expandido else "center"} !important;
             border: none;
-            border-radius: 14px;
+            border-radius: 999px !important;
             padding: {"0.75rem 1rem" if expandido else "0.75rem 0rem"} !important;
             background: transparent;
             box-shadow: none;
@@ -238,23 +238,23 @@ st.markdown(f"""
             background: #eef1ff;
         }}
 
-        /* ABA SELECIONADA: Azul claro uniforme preenchendo toda a aba */
+        /* BOTÃO SELECIONADO (Estilo pílula branca em destaque igual à referência) */
         section[data-testid="stSidebar"] .stButton button[kind="primary"],
         section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] {{
-            background: #d8e2ff !important;
-            border: 2px solid #7c93fb !important;
-            box-shadow: 0 4px 12px rgba(124, 147, 251, 0.25) !important;
+            background: #ffffff !important;
+            border-radius: 999px !important;
+            box-shadow: 0 6px 20px rgba(79, 103, 232, 0.18) !important;
         }}
         .stApp section[data-testid="stSidebar"] .stButton button[kind="primary"] p,
         .stApp section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] p {{
-            color: #2b3a6b !important;
+            color: #4f67e8 !important;
             font-weight: 700 !important;
         }}
 
         /* Status rodapé sidebar */
         .sidebar-status-container {{
             position: absolute;
-            bottom: -300px;
+            bottom: -400px;
             left: 50%;
             transform: translateX(-50%);
             background-color: #d1e7dd;
@@ -801,7 +801,7 @@ if pagina == "consulta":
             p = pend[pend["NF"] == pesquisa]
             if not p.empty:
                 r = p.iloc[0]
-                st.error(f"⚠️ Эта NF consta como PENDENTE de coleta há {int(r['Dias pendente'])} dia(s) — Status: {r['Status']}")
+                st.error(f"⚠️ Esta NF consta como PENDENTE de coleta há {int(r['Dias pendente'])} dia(s) — Status: {r['Status']}")
 
 # ================= 2. PENDENTES =================
 if pagina == "pendentes":
