@@ -194,59 +194,36 @@ st.markdown("""
         :root{--azul:#7c93fb;--azul-esc:#4f67e8;--rosa:#f06aa8}
         .stApp{background:linear-gradient(135deg,#f0f3ff 0%,#e3e9fd 100%)}
         header[data-testid="stHeader"]{background:transparent}
-        .block-container{padding-top:1.6rem;padding-left:104px;padding-right:2rem;max-width:1500px}
+        .block-container{padding-top:1.6rem;max-width:1500px}
         .header-banner{background:linear-gradient(110deg,#8aa0ff,#4f67e8);border-radius:22px;padding:28px;
             box-shadow:0 14px 32px rgba(79,103,232,.30)}
         .stAlert{border-radius:16px}
 
-        /* ===== MENU LATERAL: recolhido (só ícones) e expande ao passar o mouse ===== */
+        /* ===== MENU LATERAL FIXO (sempre aberto) ===== */
         section[data-testid="stSidebar"]{
-            position:fixed!important;top:0!important;left:0!important;bottom:0!important;height:100vh!important;
-            width:78px!important;min-width:78px!important;max-width:78px!important;
-            transform:none!important;margin:0!important;visibility:visible!important;
-            background:#ffffff;border-radius:0 28px 28px 0;
-            box-shadow:8px 0 30px rgba(79,103,232,.16);
-            transition:width .28s cubic-bezier(.4,0,.2,1),max-width .28s cubic-bezier(.4,0,.2,1);
-            overflow:hidden!important;z-index:1000001}
-        section[data-testid="stSidebar"]:hover{width:272px!important;min-width:272px!important;max-width:272px!important}
-        /* conteúdo interno com largura FIXA: não reflui nem quebra o texto; o painel só "revela" mais área */
-        section[data-testid="stSidebar"] > div,
-        section[data-testid="stSidebar"] [data-testid="stSidebarContent"]{
-            width:272px!important;min-width:272px!important;height:100vh!important;
-            display:block!important;overflow:hidden!important}
+            width:270px!important;min-width:270px!important;max-width:270px!important;
+            transform:none!important;visibility:visible!important;
+            background:#ffffff;border-radius:0 26px 26px 0;box-shadow:8px 0 30px rgba(79,103,232,.14)}
         [data-testid="stSidebarCollapseButton"],[data-testid="stSidebarCollapsedControl"],
-        [data-testid="collapsedControl"],[data-testid="stSidebarHeader"]{display:none!important}
-        [data-testid="stSidebarUserContent"]{padding:1.2rem .65rem!important;width:272px!important;box-sizing:border-box}
-        section[data-testid="stSidebar"] [data-testid="stWidgetLabel"]{display:none!important}
-        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:0!important;align-items:flex-start!important}
+        [data-testid="collapsedControl"],[data-testid="stSidebarResizeHandle"]{display:none!important}
+        [data-testid="stSidebarUserContent"]{padding:1.2rem 1rem!important}
 
-        .sb-logo{display:flex;align-items:center;gap:12px;padding:4px 14px 22px;white-space:nowrap;
-            font-size:26px;border-bottom:1px solid #e8edfb;margin-bottom:18px}
+        .sb-logo{display:flex;align-items:center;gap:12px;padding:4px 10px 20px;white-space:nowrap;
+            font-size:28px;border-bottom:1px solid #e8edfb;margin-bottom:16px}
         .sb-logo span{font-size:12px;font-weight:800;letter-spacing:1.6px;line-height:1.25;color:#4f67e8}
-        .sb-dica{font-size:11px;color:#9aa7c7;white-space:nowrap;padding:18px 16px 0;opacity:0;transition:opacity .3s}
-        section[data-testid="stSidebar"]:hover .sb-dica{opacity:1}
 
-        section[data-testid="stSidebar"] [role="radiogroup"]{
-            display:flex!important;flex-direction:column!important;gap:8px!important;width:250px!important}
-        section[data-testid="stSidebar"] [role="radiogroup"] label{
-            width:250px!important;margin:0!important;padding:13px 17px!important;border-radius:16px;cursor:pointer;
-            display:flex!important;align-items:center!important;justify-content:flex-start!important;
-            white-space:nowrap!important;box-sizing:border-box;transition:background .2s}
-        /* esconde a bolinha do radio (em qualquer versão do Streamlit) */
-        section[data-testid="stSidebar"] [role="radiogroup"] label > div:first-child:not([data-testid="stMarkdownContainer"]),
-        section[data-testid="stSidebar"] [role="radiogroup"] label [data-baseweb="radio"] > div:first-child:not([data-testid="stMarkdownContainer"]){
-            display:none!important}
-        section[data-testid="stSidebar"] [role="radiogroup"] label [data-testid="stMarkdownContainer"]{width:auto!important;margin:0!important}
-        .stApp section[data-testid="stSidebar"] [role="radiogroup"] label p{
-            text-align:left!important;justify-content:flex-start!important;margin:0!important;
-            white-space:nowrap!important;word-break:normal!important;overflow-wrap:normal!important;
-            font-size:15px;font-weight:600;color:#5b6b8c}
-        section[data-testid="stSidebar"] [role="radiogroup"] label:hover{background:#eef1ff}
-        section[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked){
-            background:linear-gradient(90deg,#8aa0ff,#4f67e8);box-shadow:0 8px 18px rgba(79,103,232,.35)}
-        .stApp section[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) p{color:#fff}
-
-        @media(max-width:768px){.block-container{padding-left:88px;padding-right:1rem}}
+        section[data-testid="stSidebar"] .stButton{margin-bottom:6px}
+        section[data-testid="stSidebar"] .stButton button{
+            width:100%;justify-content:flex-start;border:none;border-radius:14px;
+            padding:.75rem 1rem;background:transparent;box-shadow:none;transition:background .2s}
+        .stApp section[data-testid="stSidebar"] .stButton button p{
+            text-align:left!important;font-size:15px;font-weight:600;color:#5b6b8c;margin:0}
+        section[data-testid="stSidebar"] .stButton button:hover{background:#eef1ff}
+        section[data-testid="stSidebar"] .stButton button[kind="primary"],
+        section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"]{
+            background:linear-gradient(90deg,#8aa0ff,#4f67e8);box-shadow:0 8px 18px rgba(79,103,232,.32)}
+        .stApp section[data-testid="stSidebar"] .stButton button[kind="primary"] p,
+        .stApp section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] p{color:#fff}
     </style>
 """, unsafe_allow_html=True)
 
@@ -670,12 +647,16 @@ if "pendentes" in permitidas:
 chaves.append("conserto"); nomes.append("🔧 Conserto/Reparo")
 if "dashboard" in permitidas:
     chaves.append("dashboard"); nomes.append("📊 Dashboard")
+if "pagina" not in st.session_state:
+    st.session_state["pagina"] = "consulta"
 with st.sidebar:
     st.markdown('<div class="sb-logo">📦<span>PIONEERS<br>OF FLOW</span></div>', unsafe_allow_html=True)
-    _rotulos = dict(zip(chaves, nomes))
-    pagina = st.radio("Menu", chaves, format_func=lambda k: _rotulos[k],
-                      label_visibility="collapsed", key="menu_nav")
-    st.markdown('<div class="sb-dica">Passe o mouse para expandir</div>', unsafe_allow_html=True)
+    for _k, _n in zip(chaves, nomes):
+        _ativo = st.session_state["pagina"] == _k
+        if st.button(_n, key=f"nav_{_k}", use_container_width=True, type="primary" if _ativo else "secondary"):
+            st.session_state["pagina"] = _k
+            st.rerun()
+pagina = st.session_state["pagina"]
 if pagina not in chaves:
     pagina = "consulta"
 
