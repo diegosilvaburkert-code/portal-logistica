@@ -649,9 +649,6 @@ if AUTH_ATIVO:
                     st.session_state["tentativas"] = st.session_state.get("tentativas", 0) + 1
                     time.sleep(1.5)
                     erro_login = "Usuário ou senha inválidos."
-if topo3.button("🔄 Atualizar"):
-    st.cache_data.clear()
-    st.rerun()
 if erro_login:
     st.error(erro_login)
 if AUTH_ATIVO and not logado:
