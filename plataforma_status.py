@@ -13,7 +13,7 @@ import pandas as pd
 import streamlit as st
 
 # --- CONFIGURAÇÃO DA GOOGLE SHEET ---
-LINK_PLANILHA = "https://google.com"
+LINK_PLANILHA = "https://google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En0FEYfpVs-58e9S0/edit?gid=0#gid=0"
 NOME_DA_ABA = "controle"
 ABA_PENDENTES = "Pendentes (FUP)"
 ABA_CONSERTO = "Retorno Conserto"  # nome exato da aba de reparos na planilha
