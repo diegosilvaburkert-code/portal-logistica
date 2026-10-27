@@ -13,7 +13,7 @@ import pandas as pd
 import streamlit as st
 
 # --- CONFIGURAÇÃO DA GOOGLE SHEET ---
-LINK_PLANILHA = "https://google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En0FEYfpVs-58e9S0/edit?gid=0#gid=0"
+LINK_PLANILHA = "https://google.com"
 NOME_DA_ABA = "controle"
 ABA_PENDENTES = "Pendentes (FUP)"
 ABA_CONSERTO = "Retorno Conserto"  # nome exato da aba de reparos na planilha
@@ -203,10 +203,12 @@ st.markdown("""
         section[data-testid="stSidebar"]{
             width:270px!important;min-width:270px!important;max-width:270px!important;
             transform:none!important;visibility:visible!important;
-            background:#ffffff;border-radius:0 26px 26px 0;box-shadow:8px 0 30px rgba(79,103,232,.14)}
+            background:#ffffff;border-radius:0 26px 26px 0;box-shadow:8px 0 30px rgba(79,103,232,.14);
+            position: relative !important;
+        }
         [data-testid="stSidebarCollapseButton"],[data-testid="stSidebarCollapsedControl"],
         [data-testid="collapsedControl"],[data-testid="stSidebarResizeHandle"]{display:none!important}
-        [data-testid="stSidebarUserContent"]{padding:1.2rem 1rem!important}
+        [data-testid="stSidebarUserContent"]{padding:1.2rem 1rem 3.5rem 1rem!important}
 
         .sb-logo{display:flex;align-items:center;gap:12px;padding:4px 10px 20px;white-space:nowrap;
             font-size:28px;border-bottom:1px solid #e8edfb;margin-bottom:16px}
@@ -224,6 +226,23 @@ st.markdown("""
             background:linear-gradient(90deg,#8aa0ff,#4f67e8);box-shadow:0 8px 18px rgba(79,103,232,.32)}
         .stApp section[data-testid="stSidebar"] .stButton button[kind="primary"] p,
         .stApp section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] p{color:#fff}
+        
+        /* Container Customizado do Status de Conexão na Sidebar */
+        .sidebar-status-container {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            background-color: #d1e7dd;
+            color: #0f5132;
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 700;
+            border: 1px solid #badbcc;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -245,6 +264,9 @@ def ler_valores(aba):
 
 def para_data(s):
     return pd.to_datetime(s, dayfirst=True, errors="coerce", format="mixed")
+
+
+def limpa_status(s):
 
 
 def limpa_status(s):
