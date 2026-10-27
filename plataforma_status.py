@@ -26,7 +26,7 @@ st.markdown("""
     <style>
         /* 1. Alteração do Fundo da Página para o Azul Claro da Empresa */
         .stApp { 
-            background-color: #e6effa; 
+            background-color: #eaeeff; 
         }
         
         /* CENTRALIZAÇÃO GLOBAL DE TEXTOS E ELEMENTOS INDICADOS */
@@ -87,7 +87,7 @@ st.markdown("""
         
         /* Banner Corporativo Superior */
         .header-banner {
-            background: linear-gradient(90deg, #4f83cc, #1b4f93);
+            background: linear-gradient(90deg, #7c93fb, #4f67e8);
             padding: 25px;
             border-radius: 10px;
             color: white;
@@ -167,7 +167,7 @@ st.markdown("""
             color: white;
         }
         .stepper-item.completed .step-name {
-            color: #1b4f93;
+            color: #4f67e8;
             font-weight: bold;
         }
         .stepper-line-active {
@@ -187,6 +187,53 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+
+
+st.markdown("""
+    <style>
+        :root{--azul:#7c93fb;--azul-esc:#4f67e8;--rosa:#f06aa8}
+        .stApp{background:linear-gradient(135deg,#f0f3ff 0%,#e3e9fd 100%)}
+        header[data-testid="stHeader"]{background:transparent}
+        .block-container{padding-top:1.6rem;padding-left:104px;padding-right:2rem;max-width:1500px}
+        .header-banner{background:linear-gradient(110deg,#8aa0ff,#4f67e8);border-radius:22px;padding:28px;
+            box-shadow:0 14px 32px rgba(79,103,232,.30)}
+        .stAlert{border-radius:16px}
+
+        /* ===== MENU LATERAL: recolhido (só ícones) e expande ao passar o mouse ===== */
+        section[data-testid="stSidebar"]{
+            position:fixed!important;top:0;left:0;height:100vh;
+            width:78px!important;min-width:78px!important;max-width:none!important;
+            transform:none!important;margin-left:0!important;visibility:visible!important;
+            background:#ffffff;border-radius:0 28px 28px 0;
+            box-shadow:8px 0 30px rgba(79,103,232,.16);
+            transition:width .28s cubic-bezier(.4,0,.2,1);overflow:hidden;z-index:1000001}
+        section[data-testid="stSidebar"]:hover{width:272px!important}
+        section[data-testid="stSidebar"] > div{width:100%!important}
+        [data-testid="stSidebarCollapseButton"],[data-testid="stSidebarCollapsedControl"],
+        [data-testid="collapsedControl"],[data-testid="stSidebarHeader"]{display:none!important}
+        [data-testid="stSidebarUserContent"]{padding:1.2rem .65rem!important}
+
+        .sb-logo{display:flex;align-items:center;gap:12px;padding:4px 14px 22px;white-space:nowrap;
+            font-size:26px;border-bottom:1px solid #e8edfb;margin-bottom:18px}
+        .sb-logo span{font-size:12px;font-weight:800;letter-spacing:1.6px;line-height:1.25;color:#4f67e8}
+        .sb-dica{font-size:11px;color:#9aa7c7;white-space:nowrap;padding:18px 16px 0;overflow:hidden}
+
+        section[data-testid="stSidebar"] div[role="radiogroup"]{display:flex;flex-direction:column;gap:8px}
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label{
+            width:100%;margin:0;padding:13px 17px;border-radius:16px;cursor:pointer;
+            white-space:nowrap;overflow:hidden;justify-content:flex-start;transition:background .2s,transform .2s}
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child{display:none!important}
+        .stApp section[data-testid="stSidebar"] label p{
+            text-align:left!important;justify-content:flex-start!important;margin:0;
+            font-size:15px;font-weight:600;color:#5b6b8c}
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label:hover{background:#eef1ff;transform:translateX(3px)}
+        section[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked){
+            background:linear-gradient(90deg,#8aa0ff,#4f67e8);box-shadow:0 8px 18px rgba(79,103,232,.35)}
+        .stApp section[data-testid="stSidebar"] label:has(input:checked) p{color:#fff}
+
+        @media(max-width:768px){.block-container{padding-left:88px;padding-right:1rem}}
+    </style>
+""", unsafe_allow_html=True)
 
 @st.cache_resource
 def conectar_google_sheets():
@@ -441,9 +488,9 @@ CSS_DET = """<style>
 .dt-3{grid-template-columns:repeat(3,1fr)}
 .dt-1{grid-template-columns:1fr;margin-top:14px}
 @media(max-width:760px){.dt-3{grid-template-columns:1fr}}
-.dt-card{background:#fff;border-radius:12px;padding:16px 14px;text-align:center;box-shadow:0 3px 10px rgba(27,79,147,.10);border-top:4px solid #4f83cc;display:flex;flex-direction:column;justify-content:center;min-height:86px}
+.dt-card{background:#fff;border-radius:18px;padding:16px 14px;text-align:center;box-shadow:0 3px 10px rgba(27,79,147,.10);border-top:4px solid #7c93fb;display:flex;flex-direction:column;justify-content:center;min-height:86px}
 .dt-l{font-size:11.5px;font-weight:700;letter-spacing:.6px;color:#6b7a90;text-transform:uppercase}
-.dt-v{font-size:22px;font-weight:700;color:#1b4f93;margin-top:6px;line-height:1.25;overflow-wrap:anywhere}
+.dt-v{font-size:22px;font-weight:700;color:#4f67e8;margin-top:6px;line-height:1.25;overflow-wrap:anywhere}
 .dt-v.sm{font-size:18px}
 .dt-v.vazio{color:#9aa7ba;font-weight:600}
 .dt-obs{background:#fff8e6;border-top-color:#f5a623}
@@ -608,11 +655,17 @@ if "pendentes" in permitidas:
 chaves.append("conserto"); nomes.append("🔧 Conserto/Reparo")
 if "dashboard" in permitidas:
     chaves.append("dashboard"); nomes.append("📊 Dashboard")
-T = dict(zip(chaves, st.tabs(nomes)))
-aba1, aba2, aba3, aba4 = T["consulta"], T.get("pendentes"), T.get("dashboard"), T["conserto"]
+with st.sidebar:
+    st.markdown('<div class="sb-logo">📦<span>PIONEERS<br>OF FLOW</span></div>', unsafe_allow_html=True)
+    _rotulos = dict(zip(chaves, nomes))
+    pagina = st.radio("Menu", chaves, format_func=lambda k: _rotulos[k],
+                      label_visibility="collapsed", key="menu_nav")
+    st.markdown('<div class="sb-dica">Passe o mouse para expandir</div>', unsafe_allow_html=True)
+if pagina not in chaves:
+    pagina = "consulta"
 
 # ================= 1. CONSULTA (código original) =================
-with aba1:
+if pagina == "consulta":
     _, mid, _ = st.columns([1, 3, 1])
     with mid:
         st.write("Insira o número da Nota Fiscal abaixo para verificar o fluxo do processo.")
@@ -691,8 +744,8 @@ with aba1:
                 st.error(f"⚠️ Esta NF consta como PENDENTE de coleta há {int(r['Dias pendente'])} dia(s) — Status: {r['Status']}")
 
 # ================= 2. PENDENTES =================
-if aba2 is not None:
-    with aba2:
+if pagina == "pendentes":
+    with st.container():
         f1, f2, f3, f4 = st.columns(4)
         frete = f1.multiselect("Frete", sorted(pend["Frete"].unique()))
         status = f2.multiselect("Status", sorted(pend["Status"].unique()))
@@ -726,7 +779,7 @@ if aba2 is not None:
             """<style>
             .tabela-pend{max-height:620px;overflow:auto;border-radius:8px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.08)}
             .tabela-pend table{width:100%;border-collapse:collapse;font-size:14px}
-            .tabela-pend th{position:sticky;top:0;background:#1b4f93;color:#fff;padding:10px 8px;z-index:1}
+            .tabela-pend th{position:sticky;top:0;background:#4f67e8;color:#fff;padding:10px 8px;z-index:1}
             .tabela-pend td{padding:8px;border-bottom:1px solid #e4e9f0;text-align:center}
             </style>""" + f'<div class="tabela-pend">{html_tab}</div>',
             unsafe_allow_html=True)
@@ -742,11 +795,11 @@ CSS_DASH = """<style>
 .pf-r2{grid-template-columns:270px 1fr}
 .pf-r3{grid-template-columns:1.2fr 1fr 1fr}
 @media(max-width:1000px){.pf-r1,.pf-r2,.pf-r3{grid-template-columns:1fr}}
-.pf-card{background:#fff;border-radius:10px;padding:16px 18px;box-shadow:0 3px 10px rgba(27,79,147,.10);text-align:left;overflow:hidden}
+.pf-card{background:#fff;border-radius:20px;padding:18px 20px;box-shadow:0 8px 24px rgba(79,103,232,.12);text-align:left;overflow:hidden}
 .pf-t{font-size:12px;font-weight:700;letter-spacing:.5px;color:#5c6b83;text-transform:uppercase}
 .pf-s{font-size:12px;color:#8a97ab;margin-top:2px}
-.pf-v{font-size:36px;font-weight:700;color:#1b4f93;line-height:1.15;margin-top:6px}
-.pf-blue{background:linear-gradient(90deg,#4f83cc,#1b4f93);color:#fff;display:flex;flex-direction:column;justify-content:center}
+.pf-v{font-size:36px;font-weight:700;color:#4f67e8;line-height:1.15;margin-top:6px}
+.pf-blue{background:linear-gradient(90deg,#7c93fb,#4f67e8);color:#fff;display:flex;flex-direction:column;justify-content:center}
 .pf-blue .pf-t,.pf-blue .pf-s{color:#e3edfb}
 .pf-duo{display:flex;justify-content:space-around;gap:10px;margin-top:8px}
 .pf-duo div{text-align:center}
@@ -756,14 +809,14 @@ CSS_DASH = """<style>
 .pf-don+.pf-don{margin-top:18px;padding-top:16px;border-top:1px solid #e1e9f5}
 .pf-big{display:flex;gap:18px;align-items:center}
 .pf-big .side{min-width:150px;text-align:left}
-.pf-big .side b{display:block;font-size:30px;color:#1b4f93;line-height:1.1}
+.pf-big .side b{display:block;font-size:30px;color:#4f67e8;line-height:1.1}
 .pf-big .side span{font-size:12px;color:#8a97ab;display:block;margin-bottom:14px}
 .pf-li{margin-top:14px}
 .pf-lr{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:600;color:#2c3e57}
 .pf-lr span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pf-lr b{color:#1b4f93;white-space:nowrap}
+.pf-lr b{color:#4f67e8;white-space:nowrap}
 .pf-tr{height:6px;border-radius:6px;background:#e1e9f5;margin-top:5px}
-.pf-fi{height:6px;border-radius:6px;background:linear-gradient(90deg,#4f83cc,#1b4f93)}
+.pf-fi{height:6px;border-radius:6px;background:linear-gradient(90deg,#7c93fb,#4f67e8)}
 </style>"""
 
 
@@ -786,25 +839,25 @@ def _spark(vals, w=240, h=46):
     pts = [(2 + i * (w - 4) / (len(vals) - 1), h - 8 - (v - mn) / rng * (h - 16)) for i, v in enumerate(vals)]
     d = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
     return (f'<svg viewBox="0 0 {w} {h}" width="100%" height="{h}" preserveAspectRatio="none">'
-            f'<defs><linearGradient id="sp{u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4f83cc" '
-            f'stop-opacity=".25"/><stop offset="1" stop-color="#4f83cc" stop-opacity="0"/></linearGradient></defs>'
+            f'<defs><linearGradient id="sp{u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7c93fb" '
+            f'stop-opacity=".25"/><stop offset="1" stop-color="#7c93fb" stop-opacity="0"/></linearGradient></defs>'
             f'<polygon points="2,{h} {d} {w-2},{h}" fill="url(#sp{u})"/>'
-            f'<polyline points="{d}" fill="none" stroke="#4f83cc" stroke-width="2.2" stroke-linejoin="round" '
+            f'<polyline points="{d}" fill="none" stroke="#7c93fb" stroke-width="2.2" stroke-linejoin="round" '
             f'stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>')
 
 
-def _donut(pct, legenda):
+def _donut(pct, legenda, c1="#7c93fb", c2="#4f67e8"):
     pct = max(0.0, min(100.0, pct))
     r = 42
     circ = 2 * 3.14159265 * r
     u = next(_uid)
     return (f'<div class="pf-don"><svg viewBox="0 0 110 110" width="120" height="120">'
-            f'<defs><linearGradient id="dn{u}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f83cc"/>'
-            f'<stop offset="1" stop-color="#1b4f93"/></linearGradient></defs>'
+            f'<defs><linearGradient id="dn{u}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{c1}"/>'
+            f'<stop offset="1" stop-color="{c2}"/></linearGradient></defs>'
             f'<circle cx="55" cy="55" r="{r}" fill="none" stroke="#dbe5f3" stroke-width="9"/>'
             f'<circle cx="55" cy="55" r="{r}" fill="none" stroke="url(#dn{u})" stroke-width="9" stroke-linecap="round" '
             f'stroke-dasharray="{circ * pct / 100:.1f} {circ:.1f}" transform="rotate(-90 55 55)"/>'
-            f'<text x="55" y="62" text-anchor="middle" font-size="22" font-weight="700" fill="#1b4f93">{pct:.0f}%</text>'
+            f'<text x="55" y="62" text-anchor="middle" font-size="22" font-weight="700" fill="#4f67e8">{pct:.0f}%</text>'
             f'</svg><div class="pf-s">{legenda}</div></div>')
 
 
@@ -818,12 +871,12 @@ def _linha(rot, vals, w=640, h=230):
                     f'y2="{pt + (h - pt - pb) * k / 3:.1f}" stroke="#e1e9f5"/>' for k in range(4))
     pts = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in enumerate(vals))
     bolas = "".join(
-        f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="5" fill="#fff" stroke="#4f83cc" stroke-width="3"/>'
+        f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="5" fill="#fff" stroke="#7c93fb" stroke-width="3"/>'
         f'<text x="{X(i):.1f}" y="{Y(v) - 11:.1f}" text-anchor="middle" font-size="11" font-weight="600" '
-        f'fill="#1b4f93">{v}</text>' for i, v in enumerate(vals))
+        f'fill="#4f67e8">{v}</text>' for i, v in enumerate(vals))
     eixo = "".join(f'<text x="{X(i):.1f}" y="{h - 10}" text-anchor="middle" font-size="11" fill="#8a97ab">{r}</text>'
                    for i, r in enumerate(rot))
-    return (f'<svg viewBox="0 0 {w} {h}" width="100%">{grade}<polyline points="{pts}" fill="none" stroke="#4f83cc" '
+    return (f'<svg viewBox="0 0 {w} {h}" width="100%">{grade}<polyline points="{pts}" fill="none" stroke="#7c93fb" '
             f'stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>{bolas}{eixo}</svg>')
 
 
@@ -842,10 +895,10 @@ def _barras(rot, vals, w=360, h=210):
                   + (f'<rect x="{x:.1f}" y="{bot - fh:.1f}" width="{bw:.1f}" height="{fh:.1f}" rx="{bw / 2:.1f}" '
                      f'fill="url(#br{u})"/>' if v > 0 else "")
                   + f'<text x="{x + bw / 2:.1f}" y="{top - 8}" text-anchor="middle" font-size="12" font-weight="700" '
-                    f'fill="#1b4f93">{v}</text>'
+                    f'fill="#4f67e8">{v}</text>'
                   + f'<text x="{x + bw / 2:.1f}" y="{h - 12}" text-anchor="middle" font-size="11" fill="#8a97ab">{r}</text>')
     return (f'<svg viewBox="0 0 {w} {h}" width="100%"><defs><linearGradient id="br{u}" x1="0" y1="0" x2="0" y2="1">'
-            f'<stop offset="0" stop-color="#4f83cc"/><stop offset="1" stop-color="#1b4f93"/></linearGradient></defs>'
+            f'<stop offset="0" stop-color="#7c93fb"/><stop offset="1" stop-color="#4f67e8"/></linearGradient></defs>'
             f'{corpo}</svg>')
 
 
@@ -932,7 +985,7 @@ def montar_dashboard(pend, r2, fat, sel, hoje):
     pct_atr = atras / total * 100 if total else 0
     pct_col = len(conc) / len(r2) * 100 if len(r2) else 0
     donuts = (_donut(pct_atr, "Pendentes de coleta em atraso")
-              + _donut(pct_col, "NFs de retorno já coletadas"))
+              + _donut(pct_col, "NFs de retorno já coletadas", "#ff9ac8", "#f06aa8"))
 
     # --- evolução mensal de notas faturadas
     if sel is not None:
@@ -971,8 +1024,8 @@ def montar_dashboard(pend, r2, fat, sel, hoje):
     return "\n".join(l.strip() for l in html_all.splitlines() if l.strip())
 
 
-if aba3 is not None:
-    with aba3:
+if pagina == "dashboard":
+    with st.container():
         hoje = pd.Timestamp.today().normalize()
         try:
             rep_d = df_conserto(ler_valores(ABA_CONSERTO))
@@ -993,7 +1046,7 @@ if aba3 is not None:
         st.markdown(montar_dashboard(pend_d, r2, fat, sel, hoje), unsafe_allow_html=True)
 
 # ================= 4. CONSERTO / REPARO (consulta por NF + timeline) =================
-with aba4:
+if pagina == "conserto":
     _, mid4, _ = st.columns([1, 3, 1])
     with mid4:
         try:
