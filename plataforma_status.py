@@ -247,10 +247,10 @@ st.markdown(f"""
             color: #fff !important;
         }}
 
-        /* Status rodapé sidebar */
+        /* Status rodapé sidebar posicionado com -400px como solicitado */
         .sidebar-status-container {{
             position: absolute;
-            bottom: 15px;
+            bottom: -400px;
             left: 50%;
             transform: translateX(-50%);
             background-color: #d1e7dd;
