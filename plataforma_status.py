@@ -231,7 +231,7 @@ st.markdown("""
         .sidebar-status-container {
             position: absolute;
             bottom: -400px;
-            left: 00px;
+            left: 15px;
             background-color: #d1e7dd;
             color: #0f5132;
             padding: 4px 10px;
