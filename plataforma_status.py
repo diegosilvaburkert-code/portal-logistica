@@ -230,8 +230,8 @@ st.markdown("""
         /* Container Customizado do Status de Conexão na Sidebar */
         .sidebar-status-container {
             position: absolute;
-            bottom: 30px;
-            left: 20px;
+            bottom: 01px;
+            left: 00px;
             background-color: #d1e7dd;
             color: #0f5132;
             padding: 4px 10px;
