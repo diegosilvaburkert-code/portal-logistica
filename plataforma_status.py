@@ -401,26 +401,45 @@ def html_timeline(passos, etapa=None):
 def html_timeline_pedido(num_etapa):
     nomes = ["Em Separação", "Faturado", "Coleta Solicitada", "Coleta Efetivada"]
     n = len(nomes)
-    passos = ["ok" if i <= num_etapa else "pendente" for i in range(1, n + 1)]
+    
+    # Identifica exatamente qual o índice da etapa atual (0 a n-1)
+    # num_etapa 1 = Em Separação (índice 0)
+    # num_etapa 2 = Faturado (índice 1)
+    # num_etapa 3 = Coleta Solicitada (índice 2)
+    # num_etapa 4 = Coleta Efetivada (índice 3)
+    idx_atual = num_etapa - 1 if 1 <= num_etapa <= n else -1
+
+    passos = []
+    for i in range(1, n + 1):
+        if i < num_etapa:
+            passos.append("ok")
+        elif i == num_etapa:
+            passos.append("pendente")  # pendente faz o mapeamento do item atual no estilo .cur
+        else:
+            passos.append("pendente")
+
     segs = ""
     for k, p in enumerate(passos, start=1):
-        cor = COR_TRECHO_CS.get(p)
+        # Pinta a barra de progresso se a etapa anterior já foi concluída
+        cor = COR_TRECHO_CS["ok"] if k < num_etapa else ""
         if not cor:
             continue
         ini = 0 if k == 1 else (k - 1.5) / n * 100
         larg = (0.5 if k == 1 else 1) / n * 100 + 0.15
         raio = "10px 0 0 10px" if k == 1 else "0"
         segs += f'<div class="tl-seg" style="left:{ini:.3f}%;width:{larg:.3f}%;background:{cor};border-radius:{raio}"></div>'
-    if passos[-1] == "ok":
-        segs += (f'<div class="tl-seg" style="left:{(n - 0.5) / n * 100:.3f}%;width:{0.5 / n * 100:.3f}%;'
-                 f'background:{COR_TRECHO_CS["ok"]};border-radius:0 10px 10px 0"></div>')
+
     itens = ""
     for i, (nome, p) in enumerate(zip(nomes, passos), start=1):
+        is_ok = i < num_etapa
         is_cur = (i == num_etapa)
-        cls = "ok" if p == "ok" else "cur" if is_cur else ""
-        ic = "✓" if p == "ok" else ""
-        tag = "Em andamento" if is_cur else "Concluído" if p == "ok" else ""
+        
+        cls = "ok" if is_ok else ("cur" if is_cur else "")
+        ic = "✓" if is_ok else ""
+        tag = "Em andamento" if is_cur else ("Concluído" if is_ok else "")
+        
         itens += f'<div class="tl-item {cls}"><div class="tl-c">{ic}</div><div class="tl-n">{nome}</div><div class="tl-t">{tag}</div></div>'
+        
     return f'<div class="tl-wrap">{segs}{itens}</div>'
 
 
@@ -567,14 +586,9 @@ def calcular_fluxo_status(linha):
 
     transportador_valido = transportador and transportador != "-"
 
-    etapa_atingida = 0 
-    status_atual = "⚪ Aguardando Processamento"
-    detalhe_operacional = "Pedido registrado, aguardando início da separação."
-
-    if cliente:
-        etapa_atingida = 1
-        status_atual = "🟠 Em Separação / Embalagem"
-        detalhe_operacional = f"Pedido em separação técnica. Responsável pela ação: {responsavel if responsavel else 'Não informado'}."
+    etapa_atingida = 1 
+    status_atual = "🟠 Em Separação / Embalagem"
+    detalhe_operacional = f"Pedido em separação técnica. Responsável pela ação: {responsavel if responsavel else 'Não informado'}."
 
     if nf and nf != "None" and nf != "":
         etapa_atingida = 2
