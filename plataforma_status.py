@@ -702,7 +702,7 @@ with st.sidebar:
     st.markdown('<div style="border-bottom:1px solid rgba(255,255,255,.22);margin:16px 0;"></div>', unsafe_allow_html=True)
 
     # 🔄 BOTÃO DE ATUALIZAÇÃO MANUAL
-    if st.button("🔄 Atualizar Dados", use_container_width=True, help="Limpa o cache e busca os dados mais recentes do Google Sheets"):
+    if st.button("🔄", use_container_width=True, help="Limpa o cache e busca os dados mais recentes do Google Sheets"):
         st.cache_data.clear()
         st.rerun()
 
