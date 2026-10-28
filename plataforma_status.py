@@ -17,6 +17,11 @@ LINK_PLANILHA = "https://google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En
 NOME_DA_ABA = "controle"
 ABA_PENDENTES = "Pendentes (FUP)"
 ABA_CONSERTO = "Retorno Conserto"
+
+# Link da Planilha do Hub de Conserto para cruzamento bidirecional
+LINK_HUB_CONSERTO = "https://docs.google.com/spreadsheets/d/1rZto32QSflOjbx9Gp9tC9geyrA9WzJ6tIHbX6zAnXsU"
+NOME_ABA_HUB = "Lead Time"
+
 CLIENTES_IGNORADOS = ["burkert"]
 PRAZO_ALERTA = 3
 
@@ -50,7 +55,6 @@ st.markdown(f"""
             padding-right: 1.2rem;
         }}
 
-        /* ===== BANNER CORPORATIVO PIONEERS ===== */
         .header-banner {{
             position: relative; overflow: hidden;
             background: linear-gradient(160deg, #6d8fb6 0%, #5681ac 48%, #3b719f 100%);
@@ -88,7 +92,6 @@ st.markdown(f"""
             .stApp .header-banner p {{ max-width: 100%; }}
         }}
 
-        /* ===== MENU LATERAL FIXO / DINÂMICO ===== */
         section[data-testid="stSidebar"] {{
             width: {sb_width} !important;
             min-width: {sb_width} !important;
@@ -165,14 +168,12 @@ st.markdown(f"""
             border: 1px solid rgba(255,255,255,.30); white-space: nowrap;
         }}
 
-        /* CENTRALIZAÇÃO E AJUSTES DE INTERFACE */
         .stApp h2, .stApp h3, .stApp h4, .stApp p, .stMarkdown p {{ text-align: center !important; }}
         .stAlert {{ border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center !important; }}
         [data-testid="stWidgetLabel"] {{ text-align: center !important; display: block !important; width: 100% !important; }}
         [data-testid="stTextInput"] div[data-baseweb="input"] {{ max-width: 560px !important; margin: 0 auto !important; }}
         [data-testid="stTextInput"] input {{ text-align: center !important; }}
 
-        /* STEPPER STYLES */
         .stepper-wrapper {{
             display: flex; justify-content: space-between; margin: 28px 0 14px; position: relative;
         }}
@@ -210,12 +211,63 @@ def conectar_google_sheets():
     if "private_key" in dic_chaves:
         dic_chaves["private_key"] = dic_chaves["private_key"].replace("\\\\n", "\n").replace("\\n", "\n")
     cliente = gspread.service_account_from_dict(dic_chaves)
-    return cliente.open_by_url(LINK_PLANILHA)
+    return cliente
 
 
 @st.cache_data(ttl=300)
 def ler_valores(aba):
-    return conectar_google_sheets().worksheet(aba).get_all_values()
+    client = conectar_google_sheets()
+    return client.open_by_url(LINK_PLANILHA).worksheet(aba).get_all_values()
+
+
+# ======================= INTEGRAÇÃO COM HUB DE CONSERTO =======================
+@st.cache_data(ttl=60)
+def ler_dados_hub_conserto():
+    """
+    Lê o status da aba 'Lead Time' na planilha do Hub de Conserto para 
+    identificar se a assistência já concluiu ou liberou o equipamento.
+    """
+    try:
+        client = conectar_google_sheets()
+        sh_hub = client.open_by_url(LINK_HUB_CONSERTO)
+        valores_hub = sh_hub.worksheet(NOME_ABA_HUB).get_all_values()
+        
+        ini, cab = 4, None
+        for i, l in enumerate(valores_hub[:15]):
+            t = _norm(" ".join(l))
+            if "nome do cliente" in t and "nota fiscal" in t:
+                ini, cab = i + 1, [_norm(c) for c in l]
+                break
+                
+        def achar_col(termos, padrao):
+            if cab is None: return padrao
+            for j, h in enumerate(cab):
+                if all(t in h for t in termos): return j
+            return padrao
+
+        j_nf = achar_col(("numero", "nota fiscal"), 3)
+        j_status_dev = achar_col(("status", "devolu"), 17)
+        j_status_conc = achar_col(("status", "conclus"), 18)
+        
+        mapa_hub = {}
+        for l in valores_hub[ini:]:
+            if len(l) > j_nf:
+                nf = str(l[j_nf]).strip()
+                if nf:
+                    st_dev = l[j_status_dev].strip() if j_status_dev < len(l) else ""
+                    st_conc = l[j_status_conc].strip() if j_status_conc < len(l) else ""
+                    
+                    # Considera liberado se a devolução estiver como devolvido ou conclusão como finalizado
+                    liberado_assistencia = (st_dev.lower() in ["devolvido", "liberado", "setor logistica"] or st_conc.lower() == "finalizado")
+                    
+                    mapa_hub[nf] = {
+                        "status_devolucao": st_dev,
+                        "status_conclusao": st_conc,
+                        "liberado_hub": liberado_assistencia
+                    }
+        return mapa_hub
+    except Exception:
+        return {}
 
 
 def para_data(s):
@@ -282,7 +334,13 @@ def df_conserto(valores):
     p = df["Pendência"].str.lower()
     sem_pend = (p == "") | p.str.match(r"^(finalizado|n[aã]o h[aá] pend)")
     df["_pend"] = ~sem_pend
-    df["_lib"] = df["Liberado"].str.upper().isin(["TRUE", "VERDADEIRO", "SIM", "X", "1", "✓"])
+    
+    # Cruzamento automático com o Hub de Conserto
+    dados_hub = ler_dados_hub_conserto()
+    df["_lib_log"] = df["Liberado"].str.upper().isin(["TRUE", "VERDADEIRO", "SIM", "X", "1", "✓"])
+    df["_lib_hub"] = df["Nota cliente"].map(lambda x: dados_hub.get(x, {}).get("liberado_hub", False))
+    df["_lib"] = df["_lib_log"] | df["_lib_hub"]
+    
     return df
 
 
@@ -743,9 +801,6 @@ if pagina == "consulta":
                 data_col_pedido = str(pedido_encontrado[8]).strip() if len(pedido_encontrado) > 8 else ""
                 st.markdown(html_detalhes_pedido(cards, data_col_pedido), unsafe_allow_html=True)
             else:
-                # Determina se parece ser uma Nota Fiscal ou um Pedido com base no tamanho/formato ou exibe mensagem padrão
-                # Verificamos se o termo contém letras ou tamanho típico de pedido vs nota, ou apresentamos os dois/um genérico elegante:
-                # Aqui definimos dinamicamente ou com texto customizado:
                 titulo_aviso = "Nota fiscal não faturada" if len(pesquisa) > 6 else "Pedido não faturado"
                 
                 st.markdown(
