@@ -406,26 +406,140 @@ def status_conserto(r, coletas=None):
             "passos": passos, "coleta": col}
 
 
-def html_timeline(passos, etapa):
+CSS_CS = """<style>
+.cs-hero{display:grid;grid-template-columns:1.15fr 1fr;gap:16px;margin:4px 0 16px}
+.cs-grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px}
+@media(max-width:1000px){.cs-hero,.cs-grid3{grid-template-columns:1fr}}
+.cs-card{background:#fff;border-radius:18px;padding:20px 24px;box-shadow:0 3px 12px rgba(59,113,159,.12);text-align:left;box-sizing:border-box}
+.cs-id{border-left:6px solid #3b719f}
+.cs-note{border-left:6px solid #6d8fb6}
+.cs-note.bad{border-left-color:#e53935;background:#fff5f5}
+.cs-k{font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:#7b8aa0}
+.cs-nome{font-size:30px;font-weight:800;color:#2c5a82;line-height:1.15;margin-top:6px;overflow-wrap:anywhere}
+.cs-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.cs-chip{background:#eef3f8;border-radius:20px;padding:6px 14px;font-size:13px;color:#4a5b73}
+.cs-chip b{color:#2c5a82}
+.cs-nt{font-size:15.5px;line-height:1.55;color:#34495e;margin-top:8px}
+.cs-aviso{margin-top:12px;padding:8px 12px;border-radius:10px;background:#fff6e0;color:#8a5a00;font-size:13px}
+.cs-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:11px 0;border-bottom:1px dashed #dbe5f0;font-size:14px}
+.cs-row:last-child{border-bottom:none;padding-bottom:2px}
+.cs-row span{color:#6b7a90}
+.cs-row b{color:#2c5a82;text-align:right;overflow-wrap:anywhere}
+.cs-row b.vz{color:#b3bdcc;font-weight:500}
+.cs-pill{display:inline-block;padding:3px 12px;border-radius:20px;font-size:12.5px;font-weight:700;background:#eef3f8;color:#4a5b73}
+.cs-pill.ok{background:#e3f6ec;color:#1e8e5a}.cs-pill.bad{background:#fde2e2;color:#c62828}
+.cs-sec-h{margin-bottom:6px}
+.tl-wrap{position:relative;display:flex;justify-content:space-between;margin:26px 0 6px}
+.tl-wrap::before{content:"";position:absolute;top:16px;left:0;width:100%;height:12px;background:#dbe5f0;border-radius:10px;z-index:1}
+.tl-seg{position:absolute;top:16px;height:12px;z-index:2}
+.tl-item{position:relative;display:flex;flex-direction:column;align-items:center;flex:1;z-index:3;min-width:0}
+.tl-c{width:44px;height:44px;border-radius:50%;box-sizing:border-box;background:#fff;border:4px solid #cbd6e2;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.10)}
+.tl-n{margin-top:9px;font-size:12.5px;font-weight:600;color:#6b7a90;text-align:center;padding:0 4px;line-height:1.25}
+.tl-t{margin-top:5px;min-height:18px;font-size:10.5px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:#3b719f}
+.tl-item.ok .tl-c{background:#2fae6e;border-color:#2fae6e}
+.tl-item.ok .tl-n{color:#2c5a82;font-weight:700}
+.tl-item.cur .tl-c{border-color:#3b719f;box-shadow:0 0 0 6px rgba(59,113,159,.16),0 2px 6px rgba(0,0,0,.10)}
+.tl-item.cur .tl-c::after{content:"";width:14px;height:14px;border-radius:50%;background:#3b719f}
+.tl-item.cur .tl-n{color:#2c5a82;font-weight:800}
+.tl-item.bad .tl-c{background:#e53935;border-color:#e53935}
+.tl-item.bad .tl-n{color:#e53935;font-weight:800}
+.tl-item.bad .tl-t{color:#e53935}
+.tl-item.ok:last-child .tl-t{color:#1e8e5a}
+</style>"""
+
+COR_TRECHO_CS = {"ok": "#2fae6e", "bloqueado": "#e53935"}
+
+
+def html_timeline(passos, etapa=None):
+    """Linha do tempo: cada trecho da barra pega a cor da bolinha da frente; a etapa atual recebe destaque."""
     nomes = ["Aguardando Entrada", "Pendência / Bloqueio", "Entregue p/ Conserto",
              "Liberado pela Assistência", "Aguardando Emissão de Retorno", "Aguardando Coleta", "Coletado"]
-    bloqueado = "bloqueado" in passos
-    if bloqueado:
-        etapa = 2
-    largura = {0: "0%", 1: "7.14%", 2: "21.43%", 3: "35.71%", 4: "50%", 5: "64.29%",
-               6: "78.57%", 7: "100%"}[etapa]
-    fundo = "background:linear-gradient(90deg,#e53935,#c62828);" if bloqueado else ""
+    n = len(passos)
+    bloq = "bloqueado" in passos
+    atual = None if bloq else next((i for i, p in enumerate(passos) if p == "pendente"), None)
+    segs = ""
+    for k, p in enumerate(passos, start=1):
+        cor = COR_TRECHO_CS.get(p)
+        if not cor:
+            continue
+        ini = 0 if k == 1 else (k - 1.5) / n * 100
+        larg = (0.5 if k == 1 else 1) / n * 100 + 0.15
+        raio = "10px 0 0 10px" if k == 1 else "0"
+        segs += f'<div class="tl-seg" style="left:{ini:.3f}%;width:{larg:.3f}%;background:{cor};border-radius:{raio}"></div>'
+    if passos[-1] == "ok":
+        segs += (f'<div class="tl-seg" style="left:{(n - 0.5) / n * 100:.3f}%;width:{0.5 / n * 100:.3f}%;'
+                 f'background:{COR_TRECHO_CS["ok"]};border-radius:0 10px 10px 0"></div>')
     itens = ""
-    for nome, p in zip(nomes, passos):
-        classe = {"ok": "completed", "bloqueado": "blocked", "pendente": ""}[p]
-        icone = {"ok": "✓", "bloqueado": "✕", "pendente": ""}[p]
-        itens += (f'<div class="stepper-item {classe}"><div class="step-counter">{icone}</div>'
-                  f'<div class="step-name">{nome}</div></div>')
-    return ('<style>.stepper-item.blocked .step-counter{background:#e53935;border-color:#e53935;color:#fff}'
-            '.stepper-item.blocked .step-name{color:#e53935;font-weight:bold}</style>'
-            '<div style="position:relative;width:100%;box-sizing:border-box;padding:0 25px;">'
-            '<div class="stepper-wrapper" style="margin:0;padding:0;">'
-            f'<div class="stepper-line-active" style="width:{largura};{fundo}"></div>{itens}</div></div>')
+    for i, (nome, p) in enumerate(zip(nomes, passos)):
+        cls = "ok" if p == "ok" else "bad" if p == "bloqueado" else "cur" if i == atual else ""
+        ic = "✓" if p == "ok" else "✕" if p == "bloqueado" else ""
+        tag = "Bloqueado" if p == "bloqueado" else "Em andamento" if i == atual else "Concluído" if (i == n - 1 and p == "ok") else ""
+        itens += f'<div class="tl-item {cls}"><div class="tl-c">{ic}</div><div class="tl-n">{nome}</div><div class="tl-t">{tag}</div></div>'
+    return f'<div class="tl-wrap">{segs}{itens}</div>'
+
+
+def _dias_atendimento(r, info):
+    rec = para_data(r["Recebimento"])
+    if pd.isna(rec):
+        return None, "Em atendimento há"
+    col = (info.get("coleta") or {}).get("data_col", "")
+    fim = para_data(col) if col else pd.NaT
+    if pd.notna(fim) and info["passos"][-1] == "ok":
+        return max((fim.normalize() - rec.normalize()).days, 0), "Ciclo total"
+    return max((pd.Timestamp.today().normalize() - rec.normalize()).days, 0), "Em atendimento há"
+
+
+def html_detalhes_conserto(r, info):
+    """Página de resultado em largura total: identificação + situação, fluxo e três cartões por etapa."""
+    col = info.get("coleta") or {}
+    dias, rot_dias = _dias_atendimento(r, info)
+    chips = f'<span class="cs-chip">Nota do cliente <b>{esc(r["Nota cliente"])}</b></span>'
+    if r["Recebimento"]:
+        chips += f'<span class="cs-chip">Recebido em <b>{esc(r["Recebimento"])}</b></span>'
+    if dias is not None:
+        chips += f'<span class="cs-chip">{rot_dias} <b>{dias} dia{"s" if dias != 1 else ""}</b></span>'
+
+    det, aviso = info["detalhe"], ""
+    if " ⚠️ " in det:
+        det, aviso = det.split(" ⚠️ ", 1)
+    aviso_html = f'<div class="cs-aviso">{esc(aviso)}</div>' if aviso else ""
+    hero = (f'<div class="cs-hero"><div class="cs-card cs-id"><div class="cs-k">Cliente</div>'
+            f'<div class="cs-nome">{esc(r["Cliente"])}</div><div class="cs-chips">{chips}</div></div>'
+            f'<div class="cs-card cs-note{" bad" if info["bloqueado"] else ""}"><div class="cs-k">Situação</div>'
+            f'<div class="cs-nt">{esc(det)}</div>{aviso_html}</div></div>')
+
+    fluxo = (f'<div class="cs-card"><div class="cs-k">Fluxo do processo</div>'
+             f'{html_timeline(info["passos"], info["etapa"])}</div>')
+
+    def linha(rot, valor, pill=""):
+        v = str(valor).strip()
+        if not v:
+            return f'<div class="cs-row"><span>{rot}</span><b class="vz">—</b></div>'
+        if v in ("Ainda não coletada", "Não informada"):
+            return f'<div class="cs-row"><span>{rot}</span><b class="vz">{esc(v)}</b></div>'
+        corpo = f'<span class="cs-pill {pill}">{esc(v)}</span>' if pill else esc(v)
+        return f'<div class="cs-row"><span>{rot}</span><b>{corpo}</b></div>'
+
+    def secao(titulo, linhas):
+        return f'<div class="cs-card"><div class="cs-k cs-sec-h">{titulo}</div>{"".join(linhas)}</div>'
+
+    transp = (col.get("transp") or "").strip()
+    transp = "" if transp == "-" else transp
+    pend = r["Pendência"].strip() or "Sem pendência"
+    sec = (secao("Entrada do material", [
+               linha("Entrada realizada por", r["Entrada por"]),
+               linha("Data de entrada", r["Data entrada"]),
+               linha("Pendência / Bloqueio", pend, "bad" if r["_pend"] else "ok")])
+           + secao("Liberação e retorno", [
+               linha("Liberado pela Assistência", "Sim" if r["_lib"] else "Não", "ok" if r["_lib"] else ""),
+               linha("NF de retorno", r["NF retorno"]),
+               linha("Emissão da NF de saída", r["Emissão NF saída"])])
+           + secao("Coleta pela transportadora", [
+               linha("Coleta solicitada em", col.get("data_solic", "")),
+               linha("Data da coleta", col.get("data_col") or "Ainda não coletada"),
+               linha("Transportadora", transp or "Não informada")]))
+    h = CSS_CS + hero + fluxo + f'<div class="cs-grid3">{sec}</div>'
+    return "\n".join(l.strip() for l in h.splitlines() if l.strip())
 
 
 def df_controle(valores):
@@ -542,39 +656,6 @@ def html_detalhes_pedido(cards, data_col):
     h = (CSS_DET + f'<div class="dt-grid dt-3">{linha1}</div><div class="dt-grid dt-3" style="margin-top:14px">{linha2}</div>'
          f'<div class="dt-grid dt-3" style="margin-top:14px">{linha3}</div>'
          f'<div class="dt-grid dt-1">{transp}</div><div class="dt-grid dt-1">{obs}</div>')
-    return "\n".join(l.strip() for l in h.splitlines() if l.strip())
-
-
-def _cartao(rotulo, valor, estado="", extra=""):
-    v = str(valor).strip()
-    if not v:
-        v, estado = "—", "vazio"
-    cls = "dt-v" + (f" {estado}" if estado else "") + (" sm" if extra == "sm" else "")
-    card = "dt-card" + (" dt-bad" if estado == "bad" else "")
-    return f'<div class="{card}"><div class="dt-l">{rotulo}</div><div class="{cls}">{esc(v)}</div></div>'
-
-
-def html_detalhes_conserto(r, info):
-    col = info.get("coleta") or {}
-    transp = (col.get("transp") or "").strip()
-    transp = "" if transp == "-" else transp
-    pend = r["Pendência"].strip() or "Sem pendência"
-    c = [
-        _cartao("🧾 Nota do Cliente", r["Nota cliente"]),
-        _cartao("📥 Data de Recebimento", r["Recebimento"]),
-        _cartao("🚧 Pendência / Bloqueio", pend, "bad" if r["_pend"] else "ok"),
-        _cartao("👤 Entrada realizada por", r["Entrada por"]),
-        _cartao("📅 Data de Entrada", r["Data entrada"]),
-        _cartao("🛠️ Liberado pela Assistência", "Sim" if r["_lib"] else "Não", "ok" if r["_lib"] else "vazio"),
-        _cartao("🔖 NF de Retorno", r["NF retorno"]),
-        _cartao("🧾 Emissão da NF de Saída", r["Emissão NF saída"]),
-        _cartao("✅ Data da Coleta", col.get("data_col") or "Ainda não coletada",
-                "" if col.get("data_col") else "vazio"),
-    ]
-    grade = "".join(f'<div class="dt-grid dt-3"{" style=margin-top:14px" if i else ""}>{"".join(c[i * 3:i * 3 + 3])}</div>'
-                    for i in range(3))
-    tr = _cartao("🏢 Transportadora", transp or "Não informada", "" if transp else "vazio", "sm")
-    h = CSS_DET + grade + f'<div class="dt-grid dt-1">{tr}</div>'
     return "\n".join(l.strip() for l in h.splitlines() if l.strip())
 
 
@@ -1111,15 +1192,16 @@ if pagina == "dashboard":
 
 # ================= 4. CONSERTO / REPARO =================
 if pagina == "conserto":
-    _, mid4, _ = st.columns([1, 3, 1])
-    with mid4:
-        try:
-            rep = df_conserto(ler_valores(ABA_CONSERTO))
-        except Exception as e:
-            st.error(f"Não consegui ler a aba '{ABA_CONSERTO}'. Confira o nome da aba na planilha.")
-            st.caption(str(e))
-            st.stop()
+    try:
+        rep = df_conserto(ler_valores(ABA_CONSERTO))
+    except Exception as e:
+        st.error(f"Não consegui ler a aba '{ABA_CONSERTO}'. Confira o nome da aba na planilha.")
+        st.caption(str(e))
+        st.stop()
 
+    r_sel = None
+    _, mid4, _ = st.columns([1, 2, 1])
+    with mid4:
         st.write("Digite o número da Nota Fiscal do cliente para acompanhar o conserto/reparo.")
         q = st.text_input("Número da Nota Fiscal (conserto):", placeholder="Ex: 295889-1 ou 295889...",
                           key="nf_conserto").strip()
@@ -1142,20 +1224,13 @@ if pagina == "conserto":
                 if len(achou) > 1:
                     opcoes = {f"{r['Nota cliente']} — {r['Cliente']}": i for i, r in achou.iterrows()}
                     escolha = st.selectbox("Mais de um registro encontrado, escolha:", list(opcoes))
-                    r = achou.loc[opcoes[escolha]]
+                    r_sel = achou.loc[opcoes[escolha]]
                 else:
-                    r = achou.iloc[0]
+                    r_sel = achou.iloc[0]
 
-                info = status_conserto(r, mapa_coletas(todos_dados))
-                st.markdown(f"## 📋 Cliente: {r['Cliente']}")
-                st.markdown(f"### Status Atual: {info['status']}")
-                (st.error if info["bloqueado"] else st.info)(info["detalhe"])
-
-                st.markdown("### ⏳ Fluxo do Conserto:")
-                st.markdown(html_timeline(info["passos"], info["etapa"]), unsafe_allow_html=True)
-
-                st.markdown("---")
-                st.markdown("### 🔍 Detalhes:")
-                st.markdown(html_detalhes_conserto(r, info), unsafe_allow_html=True)
+    # resultado em largura total (fora da coluna central)
+    if r_sel is not None:
+        info = status_conserto(r_sel, mapa_coletas(todos_dados))
+        st.markdown(html_detalhes_conserto(r_sel, info), unsafe_allow_html=True)
 
 st.markdown("<br><hr><div style='text-align: center; color: #6b7a90; font-size: 13px;'>Pioneers of Flow · Desenvolvido por Diego Elvis</div>", unsafe_allow_html=True)
