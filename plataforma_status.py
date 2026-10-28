@@ -330,7 +330,7 @@ def status_conserto(r, coletas=None):
     elif s6:
         status = "🔵 Aguardando coleta"
         detalhe = (f"NF de retorno {r['NF retorno']} emitida em {r['Emissão NF saída']}. "
-                   "Aguardando o cliente coletar el material.")
+                   "Aguardando o cliente coletar o material.")
         if col.get("data_solic"):
             detalhe += f" Coleta solicitada em {col['data_solic']}."
     elif s4:
@@ -404,7 +404,7 @@ def calcular_fluxo_status(linha):
     data_solic = pegar_valor(7)
     data_col = pegar_valor(8)
     observacoes = pegar_valor(9)
-    num_pedido = pegar_valor(10) # Coluna K (Número de Pedido)
+    num_pedido = pegar_valor(10)
 
     transportador_valido = transportador and transportador != "-"
 
@@ -686,9 +686,8 @@ if pagina == "consulta":
             for linha in list(linhas_pedidos):
                 if len(linha) > 4:
                     nf_numero = str(linha[4]).strip()
-                    num_pedido = str(linha[10]).strip() if len(linha) > 10 else "" # Coluna K (índice 10)
+                    num_pedido = str(linha[10]).strip() if len(linha) > 10 else ""
                     
-                    # Valida se bate com a NF ou com o Número de Pedido (se preenchido)
                     if pesquisa == nf_numero or (num_pedido and pesquisa == num_pedido):
                         pedido_encontrado = linha
                         break
@@ -744,7 +743,18 @@ if pagina == "consulta":
                 data_col_pedido = str(pedido_encontrado[8]).strip() if len(pedido_encontrado) > 8 else ""
                 st.markdown(html_detalhes_pedido(cards, data_col_pedido), unsafe_allow_html=True)
             else:
-                st.warning(f"Nenhum registro localizado com o número: '{pesquisa}'")
+                # Determina se parece ser uma Nota Fiscal ou um Pedido com base no tamanho/formato ou exibe mensagem padrão
+                # Verificamos se o termo contém letras ou tamanho típico de pedido vs nota, ou apresentamos os dois/um genérico elegante:
+                # Aqui definimos dinamicamente ou com texto customizado:
+                titulo_aviso = "Nota fiscal não faturada" if len(pesquisa) > 6 else "Pedido não faturado"
+                
+                st.markdown(
+                    f'<div style="background:#fff4e5;border:2px solid #f5a623;border-radius:12px;padding:24px 20px;text-align:center;'
+                    f'box-shadow:0 4px 12px rgba(245,166,35,.18);margin-top:10px"><div style="font-size:34px;line-height:1">⚠️</div>'
+                    f'<div style="font-size:22px;font-weight:800;color:#b45309;margin-top:8px">{titulo_aviso}</div>'
+                    f'<div style="font-size:15px;color:#5c6b73;margin-top:8px">Nenhum registro para: <b>{esc(pesquisa)}</b>. Confira o número digitado.</div></div>',
+                    unsafe_allow_html=True
+                )
 
         if pesquisa:
             p = pend[pend["NF"] == pesquisa]
