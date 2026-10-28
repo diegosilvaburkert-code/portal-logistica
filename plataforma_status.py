@@ -18,10 +18,6 @@ NOME_DA_ABA = "controle"
 ABA_PENDENTES = "Pendentes (FUP)"
 ABA_CONSERTO = "Retorno Conserto"
 
-# Link da Planilha do Hub de Conserto para cruzamento bidirecional
-LINK_HUB_CONSERTO = "https://docs.google.com/spreadsheets/d/1rZto32QSflOjbx9Gp9tC9geyrA9WzJ6tIHbX6zAnXsU"
-NOME_ABA_HUB = "Lead Time"
-
 CLIENTES_IGNORADOS = ["burkert"]
 PRAZO_ALERTA = 3
 
@@ -173,33 +169,6 @@ st.markdown(f"""
         [data-testid="stWidgetLabel"] {{ text-align: center !important; display: block !important; width: 100% !important; }}
         [data-testid="stTextInput"] div[data-baseweb="input"] {{ max-width: 560px !important; margin: 0 auto !important; }}
         [data-testid="stTextInput"] input {{ text-align: center !important; }}
-
-        .stepper-wrapper {{
-            display: flex; justify-content: space-between; margin: 28px 0 14px; position: relative;
-        }}
-        .stepper-wrapper::before {{
-            content: ""; position: absolute; top: 18px; left: 0; width: 100%; height: 12px; background: #cbd6e2; border-radius: 10px; z-index: 1;
-        }}
-        .stepper-item {{
-            position: relative; display: flex; flex-direction: column; align-items: center; flex: 1; z-index: 3;
-        }}
-        .stepper-item .step-counter {{
-            position: relative; width: 44px; height: 44px; display: flex; justify-content: center; align-items: center;
-            background: #ffffff; border: 4px solid #cbd6e2; border-radius: 50%; font-weight: bold; color: #cbd6e2; font-size: 18px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 4; box-sizing: border-box;
-        }}
-        .stepper-item .step-name {{
-            margin-top: 8px; font-size: 12px; font-weight: 600; color: #5c6b73; text-align: center;
-        }}
-        .stepper-item.completed .step-counter {{
-            background-color: #2fae6e; border-color: #2fae6e; color: white;
-        }}
-        .stepper-item.completed .step-name {{
-            color: #3b719f; font-weight: bold;
-        }}
-        .stepper-line-active {{
-            position: absolute; top: 18px; left: 0; height: 12px; background: linear-gradient(90deg, #2fae6e, #34d399); border-radius: 10px; z-index: 2;
-        }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -218,51 +187,6 @@ def conectar_google_sheets():
 def ler_valores(aba):
     client = conectar_google_sheets()
     return client.open_by_url(LINK_PLANILHA).worksheet(aba).get_all_values()
-
-
-# ======================= INTEGRAÇÃO COM HUB DE CONSERTO =======================
-@st.cache_data(ttl=60)
-def ler_dados_hub_conserto():
-    try:
-        client = conectar_google_sheets()
-        sh_hub = client.open_by_url(LINK_HUB_CONSERTO)
-        valores_hub = sh_hub.worksheet(NOME_ABA_HUB).get_all_values()
-        
-        ini, cab = 4, None
-        for i, l in enumerate(valores_hub[:15]):
-            t = _norm(" ".join(l))
-            if "nome do cliente" in t and "nota fiscal" in t:
-                ini, cab = i + 1, [_norm(c) for c in l]
-                break
-                
-        def achar_col(termos, padrao):
-            if cab is None: return padrao
-            for j, h in enumerate(cab):
-                if all(t in h for t in termos): return j
-            return padrao
-
-        j_nf = achar_col(("numero", "nota fiscal"), 3)
-        j_status_dev = achar_col(("status", "devolu"), 17)
-        j_status_conc = achar_col(("status", "conclus"), 18)
-        
-        mapa_hub = {}
-        for l in valores_hub[ini:]:
-            if len(l) > j_nf:
-                nf = str(l[j_nf]).strip()
-                if nf:
-                    st_dev = l[j_status_dev].strip() if j_status_dev < len(l) else ""
-                    st_conc = l[j_status_conc].strip() if j_status_conc < len(l) else ""
-                    
-                    liberado_assistencia = (st_dev.lower() in ["devolvido", "liberado", "setor logistica"] or st_conc.lower() == "finalizado")
-                    
-                    mapa_hub[nf] = {
-                        "status_devolucao": st_dev,
-                        "status_conclusao": st_conc,
-                        "liberado_hub": liberado_assistencia
-                    }
-        return mapa_hub
-    except Exception:
-        return {}
 
 
 def para_data(s):
@@ -330,10 +254,7 @@ def df_conserto(valores):
     sem_pend = (p == "") | p.str.match(r"^(finalizado|n[aã]o h[aá] pend)")
     df["_pend"] = ~sem_pend
     
-    dados_hub = ler_dados_hub_conserto()
-    df["_lib_log"] = df["Liberado"].str.upper().isin(["TRUE", "VERDADEIRO", "SIM", "X", "1", "✓"])
-    df["_lib_hub"] = df["Nota cliente"].map(lambda x: dados_hub.get(x, {}).get("liberado_hub", False))
-    df["_lib"] = df["_lib_log"] | df["_lib_hub"]
+    df["_lib"] = df["Liberado"].str.upper().isin(["TRUE", "VERDADEIRO", "SIM", "X", "1", "✓"])
     
     return df
 
@@ -451,7 +372,6 @@ COR_TRECHO_CS = {"ok": "#2fae6e", "bloqueado": "#e53935"}
 
 
 def html_timeline(passos, etapa=None):
-    """Linha do tempo: cada trecho da barra pega a cor da bolinha da frente; a etapa atual recebe destaque."""
     nomes = ["Aguardando Entrada", "Pendência / Bloqueio", "Entregue p/ Conserto",
              "Liberado pela Assistência", "Aguardando Emissão de Retorno", "Aguardando Coleta", "Coletado"]
     n = len(passos)
@@ -478,6 +398,32 @@ def html_timeline(passos, etapa=None):
     return f'<div class="tl-wrap">{segs}{itens}</div>'
 
 
+def html_timeline_pedido(num_etapa):
+    nomes = ["Em Separação", "Faturado", "Coleta Solicitada", "Coleta Efetivada"]
+    n = len(nomes)
+    passos = ["ok" if i <= num_etapa else "pendente" for i in range(1, n + 1)]
+    segs = ""
+    for k, p in enumerate(passos, start=1):
+        cor = COR_TRECHO_CS.get(p)
+        if not cor:
+            continue
+        ini = 0 if k == 1 else (k - 1.5) / n * 100
+        larg = (0.5 if k == 1 else 1) / n * 100 + 0.15
+        raio = "10px 0 0 10px" if k == 1 else "0"
+        segs += f'<div class="tl-seg" style="left:{ini:.3f}%;width:{larg:.3f}%;background:{cor};border-radius:{raio}"></div>'
+    if passos[-1] == "ok":
+        segs += (f'<div class="tl-seg" style="left:{(n - 0.5) / n * 100:.3f}%;width:{0.5 / n * 100:.3f}%;'
+                 f'background:{COR_TRECHO_CS["ok"]};border-radius:0 10px 10px 0"></div>')
+    itens = ""
+    for i, (nome, p) in enumerate(zip(nomes, passos), start=1):
+        is_cur = (i == num_etapa)
+        cls = "ok" if p == "ok" else "cur" if is_cur else ""
+        ic = "✓" if p == "ok" else ""
+        tag = "Em andamento" if is_cur else "Concluído" if p == "ok" else ""
+        itens += f'<div class="tl-item {cls}"><div class="tl-c">{ic}</div><div class="tl-n">{nome}</div><div class="tl-t">{tag}</div></div>'
+    return f'<div class="tl-wrap">{segs}{itens}</div>'
+
+
 def _dias_atendimento(r, info):
     rec = para_data(r["Recebimento"])
     if pd.isna(rec):
@@ -490,7 +436,6 @@ def _dias_atendimento(r, info):
 
 
 def html_detalhes_conserto(r, info):
-    """Página de resultado em largura total: identificação + situação, fluxo e três cartões por etapa."""
     col = info.get("coleta") or {}
     dias, rot_dias = _dias_atendimento(r, info)
     chips = f'<span class="cs-chip">Nota do cliente <b>{esc(r["Nota cliente"])}</b></span>'
@@ -538,6 +483,54 @@ def html_detalhes_conserto(r, info):
                linha("Coleta solicitada em", col.get("data_solic", "")),
                linha("Data da coleta", col.get("data_col") or "Ainda não coletada"),
                linha("Transportadora", transp or "Não informada")]))
+    h = CSS_CS + hero + fluxo + f'<div class="cs-grid3">{sec}</div>'
+    return "\n".join(l.strip() for l in h.splitlines() if l.strip())
+
+
+def html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend):
+    chips = f'<span class="cs-chip">Nota Fiscal <b>{esc(cards["N.F."])}</b></span>'
+    if cards["Número de Pedido"] != "—":
+        chips += f'<span class="cs-chip">Pedido <b>{esc(cards["Número de Pedido"])}</b></span>'
+    if cards["Incoterm"] != "Não informado":
+        chips += f'<span class="cs-chip">Frete <b>{esc(cards["Incoterm"])}</b></span>'
+
+    det = info["detalhe"]
+    aviso_pend = ""
+    if r_pend is not None:
+        aviso_pend = f'<div class="cs-aviso">⚠️ Esta NF consta como PENDENTE de coleta há {int(r_pend["Dias pendente"])} dia(s) — Status: {esc(r_pend["Status"])}</div>'
+
+    hero = (f'<div class="cs-hero"><div class="cs-card cs-id"><div class="cs-k">Cliente</div>'
+            f'<div class="cs-nome">{esc(cards["Cliente"])}</div><div class="cs-chips">{chips}</div></div>'
+            f'<div class="cs-card cs-note"><div class="cs-k">Situação Atual</div>'
+            f'<div class="cs-nt">{esc(info["status_atual"])}</div>'
+            f'<div style="font-size:14px;color:#5c6b73;margin-top:6px">{esc(det)}</div>{aviso_pend}</div></div>')
+
+    fluxo = (f'<div class="cs-card"><div class="cs-k">Fluxo do Processo</div>'
+             f'{html_timeline_pedido(info["etapa_atingida"])}</div>')
+
+    def linha(rot, valor, pill=""):
+        v = str(valor).strip()
+        if not v or v in ("—", "Não solicitado", "Não realizado", "Não informado", "Não informada", "Aguardando definição"):
+            return f'<div class="cs-row"><span>{rot}</span><b class="vz">—</b></div>'
+        corpo = f'<span class="cs-pill {pill}">{esc(v)}</span>' if pill else esc(v)
+        return f'<div class="cs-row"><span>{rot}</span><b>{corpo}</b></div>'
+
+    def secao(titulo, linhas):
+        return f'<div class="cs-card"><div class="cs-k cs-sec-h">{titulo}</div>{"".join(linhas)}</div>'
+
+    sec = (secao("Informações do Pedido", [
+               linha("Nota Fiscal", cards["N.F."]),
+               linha("Número de Pedido", cards["Número de Pedido"]),
+               linha("Natureza da Operação", cards["Operação"]),
+               linha("Modalidade de Frete", cards["Incoterm"])])
+           + secao("Logística & Transporte", [
+               linha("Transportador", cards["Transportador"]),
+               linha("Nº Coleta / Registro", cards["Coleta/Rastreio"]),
+               linha("Data do Contato", cards["Data Contato"]),
+               linha("Data da Coleta", data_col_pedido or "Ainda não coletada")])
+           + secao("Observações Gerais", [
+               linha("Observações", cards["Observações"])]))
+
     h = CSS_CS + hero + fluxo + f'<div class="cs-grid3">{sec}</div>'
     return "\n".join(l.strip() for l in h.splitlines() if l.strip())
 
@@ -614,49 +607,6 @@ def calcular_fluxo_status(linha):
             "Observações": observacoes if observacoes else "Nenhuma observação registrada para esta nota."
         }
     }
-
-CSS_DET = """<style>
-.dt-grid{display:grid;gap:14px;margin-top:6px}
-.dt-3{grid-template-columns:repeat(3,1fr)}
-.dt-1{grid-template-columns:1fr;margin-top:14px}
-@media(max-width:760px){.dt-3{grid-template-columns:1fr}}
-.dt-card{background:#fff;border-radius:18px;padding:16px 14px;text-align:center;box-shadow:0 3px 10px rgba(59,113,159,.10);border-top:4px solid #3b719f;display:flex;flex-direction:column;justify-content:center;min-height:86px}
-.dt-l{font-size:11.5px;font-weight:700;letter-spacing:.6px;color:#6b7a90;text-transform:uppercase}
-.dt-v{font-size:22px;font-weight:700;color:#3b719f;margin-top:6px;line-height:1.25;overflow-wrap:anywhere}
-.dt-v.sm{font-size:18px}
-.dt-v.vazio{color:#9aa7ba;font-weight:600}
-.dt-obs{background:#fff8e6;border-top-color:#f5a623}
-.dt-obs .dt-v{font-size:16px;font-weight:500;color:#5c4a1d}
-.dt-obs .dt-v.vazio{color:#a39a85}
-.dt-v.ok{color:#1e8e3e}
-.dt-v.bad{color:#c62828}
-.dt-card.dt-bad{border-top-color:#e53935;background:#fff5f5}
-</style>"""
-
-
-def html_detalhes_pedido(cards, data_col):
-    def cartao(rotulo, valor, vazio_se=(), extra=""):
-        v = str(valor).strip()
-        vazio = (not v) or v in vazio_se
-        txt = esc(v) if v and not vazio else (esc(v) if v else "—")
-        cls = "dt-v" + (" vazio" if vazio else "") + (" sm" if extra == "sm" else "")
-        return f'<div class="dt-card{" dt-obs" if extra == "obs" else ""}"><div class="dt-l">{rotulo}</div><div class="{cls}">{txt}</div></div>'
-
-    nao = ("Não solicitado", "Não realizado", "Não informado", "Não informada", "Aguardando definição", "—")
-    linha1 = (cartao("🧾 Nota Fiscal", cards["N.F."], nao)
-              + cartao("📋 Nº de Pedido", cards["Número de Pedido"], nao)
-              + cartao("🚚 Modalidade de Frete", cards["Incoterm"], nao))
-    linha2 = (cartao("📦 Natureza da Operação", cards["Operação"], nao)
-              + cartao("🔖 Nº Coleta / Registro", cards["Coleta/Rastreio"], nao)
-              + cartao("📅 Data do Contato", cards["Data Contato"], nao))
-    linha3 = cartao("✅ Data da Coleta", data_col or "Ainda não coletada", ("Ainda não coletada",))
-    transp = cartao("🏢 Transportador / Contato", cards["Transportador"], nao, "sm")
-    sem_obs = "Nenhuma observação registrada para esta nota."
-    obs = cartao("💬 Observações Gerais", cards["Observações"], (sem_obs,), "obs")
-    h = (CSS_DET + f'<div class="dt-grid dt-3">{linha1}</div><div class="dt-grid dt-3" style="margin-top:14px">{linha2}</div>'
-         f'<div class="dt-grid dt-3" style="margin-top:14px">{linha3}</div>'
-         f'<div class="dt-grid dt-1">{transp}</div><div class="dt-grid dt-1">{obs}</div>')
-    return "\n".join(l.strip() for l in h.splitlines() if l.strip())
 
 
 ABAS_RESTRITAS = {"pendentes", "dashboard"}
@@ -816,13 +766,14 @@ st.markdown(f"""
 
 # ================= 1. CONSULTA =================
 if pagina == "consulta":
-    _, mid, _ = st.columns([1, 3, 1])
+    pedido_encontrado = None
+    r_pend = None
+    _, mid, _ = st.columns([1, 2, 1])
     with mid:
         st.write("Insira o número da Nota Fiscal ou o Número de Pedido abaixo para verificar o fluxo do processo.")
-        pesquisa = st.text_input("Digite o número da Nota Fiscal ou Pedido:", placeholder="Ex: 47219...").strip()
+        pesquisa = st.text_input("Digite o número da Nota Fiscal ou Pedido:", placeholder="Ex: 47219...", key="nf_consulta").strip()
 
         if pesquisa:
-            pedido_encontrado = None
             for linha in list(linhas_pedidos):
                 if len(linha) > 4:
                     nf_numero = str(linha[4]).strip()
@@ -832,59 +783,8 @@ if pagina == "consulta":
                         pedido_encontrado = linha
                         break
             
-            if pedido_encontrado:
-                info = calcular_fluxo_status(pedido_encontrado)
-                cards = info["detalhes_card"]
-                num_etapa = info["etapa_atingida"]
-        
-                st.markdown(f"## 📋 Cliente: {cards['Cliente']}")
-                st.markdown(f"### Status Atual: {info['status_atual']}")
-                st.info(info["detalhe"])
-        
-                st.markdown("### ⏳ Fluxo do Processo:")
-        
-                largura_calculada = "0%"
-                if num_etapa == 1:
-                    largura_calculada = "25px"
-                elif num_etapa == 2:
-                    largura_calculada = "calc(33.33% + 25px)"
-                elif num_etapa == 3:
-                    largura_calculada = "calc(66.66% + 25px)"
-                elif num_etapa == 4:
-                    largura_calculada = "100%"
-
-                html_stepper = f"""
-                <div style="position: relative; width: 100%; box-sizing: border-box; padding: 0 25px;">
-                    <div class="stepper-line-active" style="width: {largura_calculada};"></div>
-                    <div class="stepper-wrapper" style="margin: 0; padding: 0;">
-                        <div class="stepper-item {'completed' if num_etapa >= 1 else ''}">
-                            <div class="step-counter">✓</div>
-                            <div class="step-name">Em Separação</div>
-                        </div>
-                        <div class="stepper-item {'completed' if num_etapa >= 2 else ''}">
-                            <div class="step-counter">✓</div>
-                            <div class="step-name">Faturado</div>
-                        </div>
-                        <div class="stepper-item {'completed' if num_etapa >= 3 else ''}">
-                            <div class="step-counter">✓</div>
-                            <div class="step-name">Coleta Solicitada</div>
-                        </div>
-                        <div class="stepper-item {'completed' if num_etapa >= 4 else ''}">
-                            <div class="step-counter">✓</div>
-                            <div class="step-name">Coleta Efetivada</div>
-                        </div>
-                    </div>
-                </div>
-                """
-                st.markdown(html_stepper, unsafe_allow_html=True)
-        
-                st.markdown("---")
-                st.markdown("### 🔍 Detalhes do Pedido:")
-                data_col_pedido = str(pedido_encontrado[8]).strip() if len(pedido_encontrado) > 8 else ""
-                st.markdown(html_detalhes_pedido(cards, data_col_pedido), unsafe_allow_html=True)
-            else:
+            if not pedido_encontrado:
                 titulo_aviso = "Nota fiscal não faturada" if len(pesquisa) > 6 else "Pedido não faturado"
-                
                 st.markdown(
                     f'<div style="background:#fff4e5;border:2px solid #f5a623;border-radius:12px;padding:24px 20px;text-align:center;'
                     f'box-shadow:0 4px 12px rgba(245,166,35,.18);margin-top:10px"><div style="font-size:34px;line-height:1">⚠️</div>'
@@ -893,11 +793,15 @@ if pagina == "consulta":
                     unsafe_allow_html=True
                 )
 
-        if pesquisa:
             p = pend[pend["NF"] == pesquisa]
             if not p.empty:
-                r = p.iloc[0]
-                st.error(f"⚠️ Esta NF consta como PENDENTE de coleta há {int(r['Dias pendente'])} dia(s) — Status: {r['Status']}")
+                r_pend = p.iloc[0]
+
+    if pedido_encontrado is not None:
+        info = calcular_fluxo_status(pedido_encontrado)
+        cards = info["detalhes_card"]
+        data_col_pedido = str(pedido_encontrado[8]).strip() if len(pedido_encontrado) > 8 else ""
+        st.markdown(html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend), unsafe_allow_html=True)
 
 # ================= 2. PENDENTES =================
 if pagina == "pendentes":
@@ -1228,7 +1132,6 @@ if pagina == "conserto":
                 else:
                     r_sel = achou.iloc[0]
 
-    # resultado em largura total (fora da coluna central)
     if r_sel is not None:
         info = status_conserto(r_sel, mapa_coletas(todos_dados))
         st.markdown(html_detalhes_conserto(r_sel, info), unsafe_allow_html=True)
