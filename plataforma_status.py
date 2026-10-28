@@ -223,10 +223,6 @@ def ler_valores(aba):
 # ======================= INTEGRAÇÃO COM HUB DE CONSERTO =======================
 @st.cache_data(ttl=60)
 def ler_dados_hub_conserto():
-    """
-    Lê o status da aba 'Lead Time' na planilha do Hub de Conserto para 
-    identificar se a assistência já concluiu ou liberou o equipamento.
-    """
     try:
         client = conectar_google_sheets()
         sh_hub = client.open_by_url(LINK_HUB_CONSERTO)
@@ -257,7 +253,6 @@ def ler_dados_hub_conserto():
                     st_dev = l[j_status_dev].strip() if j_status_dev < len(l) else ""
                     st_conc = l[j_status_conc].strip() if j_status_conc < len(l) else ""
                     
-                    # Considera liberado se a devolução estiver como devolvido ou conclusão como finalizado
                     liberado_assistencia = (st_dev.lower() in ["devolvido", "liberado", "setor logistica"] or st_conc.lower() == "finalizado")
                     
                     mapa_hub[nf] = {
@@ -335,7 +330,6 @@ def df_conserto(valores):
     sem_pend = (p == "") | p.str.match(r"^(finalizado|n[aã]o h[aá] pend)")
     df["_pend"] = ~sem_pend
     
-    # Cruzamento automático com o Hub de Conserto
     dados_hub = ler_dados_hub_conserto()
     df["_lib_log"] = df["Liberado"].str.upper().isin(["TRUE", "VERDADEIRO", "SIM", "X", "1", "✓"])
     df["_lib_hub"] = df["Nota cliente"].map(lambda x: dados_hub.get(x, {}).get("liberado_hub", False))
@@ -704,6 +698,13 @@ with st.sidebar:
         if st.button(_label, key=f"nav_{_k}", use_container_width=True, type="primary" if _ativo else "secondary"):
             st.session_state["pagina"] = _k
             st.rerun()
+
+    st.markdown('<div style="border-bottom:1px solid rgba(255,255,255,.22);margin:16px 0;"></div>', unsafe_allow_html=True)
+
+    # 🔄 BOTÃO DE ATUALIZAÇÃO MANUAL
+    if st.button("🔄 Atualizar Dados", use_container_width=True, help="Limpa o cache e busca os dados mais recentes do Google Sheets"):
+        st.cache_data.clear()
+        st.rerun()
 
     texto_conexao = "🟢 Conexão Estabelecida" if expandido else "🟢"
     st.markdown(
