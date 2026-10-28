@@ -12,7 +12,7 @@ import gspread
 import pandas as pd
 import streamlit as st
 
-# --- CONFIGURAÇÃO DA GOOGLE SHEET ---
+# ======================= CONFIGURAÇÃO DA GOOGLE SHEET =======================
 LINK_PLANILHA = "https://google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En0FEYfpVs-58e9S0/edit?gid=0#gid=0"
 NOME_DA_ABA = "controle"
 ABA_PENDENTES = "Pendentes (FUP)"
@@ -22,186 +22,87 @@ PRAZO_ALERTA = 3
 
 st.set_page_config(page_title="Portal de Status - Logística", page_icon="📦", layout="wide")
 
-# ======================= ESTADO DA SIDEBAR =======================
+# ======================= ESTADO DA SIDEBAR (EXPANDIDO / RECOLHIDO) =======================
 if "sidebar_expanded" not in st.session_state:
     st.session_state["sidebar_expanded"] = True
 
 expandido = st.session_state["sidebar_expanded"]
-sb_width = "270px" if expandido else "80px"
+sb_width = "270px" if expandido else "90px"
 
-# ======================= ESTILOS CSS REATIVOS =======================
+# ======================= ESTILOS CSS (PADRÃO LOGÍSTICA / PIONEERS) =======================
 st.markdown(f"""
     <style>
         :root {{
-            --azul: #7c93fb;
-            --azul-esc: #4f67e8;
-            --rosa: #f06aa8;
+            --azul: #6d8fb6;
+            --azul-esc: #3b719f;
+            --prata: #b8bdc6;
         }}
         .stApp {{
-            background: linear-gradient(135deg, #f0f3ff 0%, #e3e9fd 100%);
+            background: linear-gradient(135deg, #eef3f8 0%, #dce6f1 100%);
         }}
         header[data-testid="stHeader"] {{
             background: transparent !important;
         }}
         .block-container {{
             padding-top: 1.6rem;
-            max-width: 1500px;
+            max-width: 100% !important;
+            padding-left: 1.2rem;
+            padding-right: 1.2rem;
         }}
+
+        /* ===== BANNER CORPORATIVO PIONEERS ===== */
         .header-banner {{
-            background: linear-gradient(110deg, #8aa0ff, #4f67e8);
-            border-radius: 22px;
-            padding: 28px;
-            box-shadow: 0 14px 32px rgba(79, 103, 232, .30);
-            margin-bottom: 25px;
+            position: relative; overflow: hidden;
+            background: linear-gradient(160deg, #6d8fb6 0%, #5681ac 48%, #3b719f 100%);
+            border-radius: 26px;
+            padding: 34px 40px 36px;
+            box-shadow: 0 16px 36px rgba(44, 90, 130, .30);
+            margin-bottom: 26px;
         }}
-        .header-banner h1 {{
-            color: white !important;
-            font-size: 24px !important;
-            margin: 0 !important;
-            letter-spacing: 1px;
-            font-weight: 700;
-            text-align: center !important;
+        .header-banner::before {{
+            content: ""; position: absolute; right: -36px; top: -46px; width: 250px; height: 250px; border-radius: 50%;
+            background: radial-gradient(circle at 34% 28%, #f6f8fb 0%, #c9ced6 38%, #8a919d 100%);
+            box-shadow: inset -14px -18px 34px rgba(31, 58, 87, .35); opacity: .92;
         }}
-        .header-banner p {{
-            margin: 5px 0 0 0 !important;
-            font-size: 14px;
-            opacity: 0.9;
-            text-align: center !important;
+        .header-banner::after {{
+            content: ""; position: absolute; right: 200px; bottom: -42px; width: 120px; height: 120px; border-radius: 50%;
+            background: radial-gradient(circle at 34% 28%, rgba(255,255,255,.75), rgba(184,189,198,.5) 55%, rgba(255,255,255,.10));
+            box-shadow: inset -8px -10px 22px rgba(31, 58, 87, .25);
         }}
-
-        /* CENTRALIZAÇÃO GLOBAL */
-        .stApp h2, .stApp h3, .stApp h4, .stApp p, .stMarkdown p {{
-            text-align: center !important;
-            justify-content: center !important;
+        .header-banner > * {{ position: relative; z-index: 1; }}
+        .stApp .header-banner .hb-kicker {{
+            font-size: 12px; font-weight: 800; letter-spacing: 3px; color: #dbe6f1; text-align: left !important; margin: 0 0 10px 0 !important;
         }}
-        .stAlert {{ 
-            border-radius: 8px; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            text-align: center !important;
+        .stApp .header-banner h1 {{
+            color: #ffffff !important; font-size: 44px !important; line-height: 1.02 !important; margin: 0 !important;
+            letter-spacing: .5px; font-weight: 800 !important; text-transform: uppercase;
+            text-align: left !important; max-width: 75%;
         }}
-        .stAlert > div {{
-            justify-content: center !important;
-            text-align: center !important;
+        .stApp .header-banner p {{
+            margin: 12px 0 0 0 !important; font-size: 16px; color: #eaf1f8; opacity: .95;
+            text-align: left !important; max-width: 65%;
         }}
-        [data-testid="stWidgetLabel"] {{
-            text-align: center !important;
-            display: block !important;
-            width: 100% !important;
-        }}
-        [data-testid="stTextInput"] div[data-baseweb="input"] {{
-            max-width: 400px !important;
-            margin: 0 auto !important;
-        }}
-        [data-testid="stTextInput"] input {{
-            text-align: center !important;
+        @media (max-width: 900px) {{
+            .header-banner::before, .header-banner::after {{ display: none; }}
+            .stApp .header-banner h1 {{ font-size: 28px !important; max-width: 100%; }}
+            .stApp .header-banner p {{ max-width: 100%; }}
         }}
 
-        /* CORREÇÃO DOS METRICS */
-        [data-testid="stMetric"] {{
-            text-align: center !important;
-            display: flex !important;
-            flex-direction: column !important;
-            align-items: center !important;
-            justify-content: center !important;
-        }}
-        [data-testid="stMetricLabel"] {{
-            text-align: center !important;
-            display: block !important;
-            width: 100% !important;
-            justify-content: center !important;
-        }}
-        [data-testid="stMetricValue"] {{
-            white-space: normal !important;
-            word-break: break-word !important;
-            overflow-wrap: break-word !important;
-            font-size: 1.6rem !important;
-            line-height: 1.3 !important;
-            text-align: center !important;
-            display: block !important;
-            width: 100% !important;
-        }}
-
-        /* STEPPER */
-        .stepper-wrapper {{
-            display: flex;
-            justify-content: space-between;
-            margin-top: 30px;
-            margin-bottom: 30px;
-            position: relative;
-        }}
-        .stepper-wrapper::before {{
-            content: "";
-            position: absolute;
-            top: 21px;
-            left: 0;
-            width: 100%;
-            height: 14px;
-            background-color: #dbdbdb;
-            border-radius: 10px;
-            z-index: 1;
-        }}
-        .stepper-item {{
-            position: relative;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            flex: 1;
-            z-index: 3;
-        }}
-        .stepper-item .step-counter {{
-            position: relative;
-            width: 50px;
-            height: 50px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            background: #ffffff;
-            border: 4px solid #cbd6e2;
-            border-radius: 50%;
-            font-weight: bold;
-            color: #cbd6e2;
-            font-size: 18px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            z-index: 4;
-        }}
-        .stepper-item .step-name {{
-            margin-top: 10px;
-            font-size: 13px;
-            font-weight: 600;
-            color: #5c6b73;
-            text-align: center;
-        }}
-        .stepper-item.completed .step-counter {{
-            background-color: #00e63d;
-            border-color: #00e63d;
-            color: white;
-        }}
-        .stepper-item.completed .step-name {{
-            color: #4f67e8;
-            font-weight: bold;
-        }}
-        .stepper-line-active {{
-            position: absolute;
-            top: 21px;
-            left: 0;
-            height: 14px;
-            background: linear-gradient(90deg, #00c732, #00e63d);
-            border-radius: 10px;
-            z-index: 2;
-        }}
-
-        /* ===== SIDEBAR EXPANSÍVEL DINÂMICA ===== */
+        /* ===== MENU LATERAL FIXO / DINÂMICO ===== */
         section[data-testid="stSidebar"] {{
             width: {sb_width} !important;
             min-width: {sb_width} !important;
             max-width: {sb_width} !important;
-            background: #ffffff !important;
-            border-radius: 0 26px 26px 0;
-            box-shadow: 8px 0 30px rgba(79, 103, 232, .14);
-            transition: width 0.2s ease-in-out, min-width 0.2s ease-in-out;
+            transform: none !important;
+            visibility: visible !important;
+            background: linear-gradient(185deg, #5681ac 0%, #3b719f 55%, #2c5a82 100%) !important;
+            border-radius: 0 28px 28px 0;
+            box-shadow: 8px 0 30px rgba(44, 90, 130, .28);
+            transition: width 0.3s ease, min-width 0.3s ease, max-width 0.3s ease;
+            position: relative !important;
         }}
+        section[data-testid="stSidebar"] > div {{ background: transparent !important; }}
 
-        /* Oculta controles nativos redundantes do Streamlit */
         [data-testid="stSidebarCollapseButton"],
         [data-testid="stSidebarCollapsedControl"],
         [data-testid="collapsedControl"],
@@ -210,19 +111,30 @@ st.markdown(f"""
         }}
 
         [data-testid="stSidebarUserContent"] {{
-            padding: 1rem 0.6rem 4rem 0.6rem !important;
+            padding: 1.2rem 0.8rem 3.5rem 0.8rem !important;
         }}
 
-        /* Botões da Sidebar */
-        section[data-testid="stSidebar"] .stButton {{
-            margin-bottom: 6px;
+        .sb-header {{
+            display: flex; align-items: center;
+            justify-content: {"space-between" if expandido else "center"};
+            padding: 4px 6px 16px 6px;
+            border-bottom: 1px solid rgba(255,255,255,.22);
+            margin-bottom: 20px;
         }}
+        .sb-logo {{
+            display: flex; align-items: center; gap: 10px; white-space: nowrap; font-size: 24px;
+        }}
+        .sb-logo span {{
+            font-size: 12px; font-weight: 800; letter-spacing: 1.6px; line-height: 1.2; color: #ffffff;
+        }}
+
+        section[data-testid="stSidebar"] .stButton {{ margin-bottom: 8px; }}
         section[data-testid="stSidebar"] .stButton button {{
-            width: 100% !important;
-            justify-content: {"flex-start" if expandido else "center"} !important;
+            width: 100%;
+            justify-content: center !important;
             border: none;
-            border-radius: 8px !important;
-            padding: {"0.75rem 1rem" if expandido else "0.75rem 0rem"} !important;
+            border-radius: 16px;
+            padding: {"0.8rem 1rem" if expandido else "0.8rem 0rem"} !important;
             background: transparent;
             box-shadow: none;
             transition: all 0.2s;
@@ -230,43 +142,62 @@ st.markdown(f"""
         .stApp section[data-testid="stSidebar"] .stButton button p {{
             text-align: {"left" if expandido else "center"} !important;
             font-size: {"15px" if expandido else "20px"};
-            font-weight: 600;
-            color: #5b6b8c;
+            font-weight: 700;
+            color: #e3ecf5;
             margin: 0;
         }}
-        section[data-testid="stSidebar"] .stButton button:hover {{
-            background: #eef1ff;
-        }}
-
-        /* BOTÃO SELECIONADO: Retângulo completo cobrindo toda a largura da linha */
+        section[data-testid="stSidebar"] .stButton button:hover {{ background: rgba(255,255,255,.14); }}
         section[data-testid="stSidebar"] .stButton button[kind="primary"],
         section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] {{
-            background: #d8e2ff !important;
-            border: none !important;
-            border-radius: 8px !important;
-            width: 100% !important;
-            box-shadow: none !important;
+            background: #ffffff;
+            box-shadow: 0 10px 22px rgba(20, 50, 80, .30);
         }}
         .stApp section[data-testid="stSidebar"] .stButton button[kind="primary"] p,
         .stApp section[data-testid="stSidebar"] .stButton button[data-testid="stBaseButton-primary"] p {{
-            color: #2b3a6b !important;
-            font-weight: 700 !important;
+            color: #2c5a82 !important;
         }}
 
-        /* Status rodapé sidebar */
         .sidebar-status-container {{
-            position: absolute;
-            bottom: -300px;
-            left: 50%;
-            transform: translateX(-50%);
-            background-color: #d1e7dd;
-            color: #0f5132;
-            padding: 4px 8px;
-            border-radius: 8px;
-            font-size: {"11px" if expandido else "10px"};
-            font-weight: 700;
-            border: 1px solid #badbcc;
-            white-space: nowrap;
+            margin-top: 28px; text-align: center;
+            background: rgba(255,255,255,.14); color: #ffffff;
+            padding: 7px 10px; border-radius: 12px;
+            font-size: 11px; font-weight: 700; letter-spacing: .4px;
+            border: 1px solid rgba(255,255,255,.30); white-space: nowrap;
+        }}
+
+        /* CENTRALIZAÇÃO E AJUSTES DE INTERFACE */
+        .stApp h2, .stApp h3, .stApp h4, .stApp p, .stMarkdown p {{ text-align: center !important; }}
+        .stAlert {{ border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center !important; }}
+        [data-testid="stWidgetLabel"] {{ text-align: center !important; display: block !important; width: 100% !important; }}
+        [data-testid="stTextInput"] div[data-baseweb="input"] {{ max-width: 560px !important; margin: 0 auto !important; }}
+        [data-testid="stTextInput"] input {{ text-align: center !important; }}
+
+        /* STEPPER STYLES */
+        .stepper-wrapper {{
+            display: flex; justify-content: space-between; margin: 28px 0 14px; position: relative;
+        }}
+        .stepper-wrapper::before {{
+            content: ""; position: absolute; top: 18px; left: 0; width: 100%; height: 12px; background: #cbd6e2; border-radius: 10px; z-index: 1;
+        }}
+        .stepper-item {{
+            position: relative; display: flex; flex-direction: column; align-items: center; flex: 1; z-index: 3;
+        }}
+        .stepper-item .step-counter {{
+            position: relative; width: 44px; height: 44px; display: flex; justify-content: center; align-items: center;
+            background: #ffffff; border: 4px solid #cbd6e2; border-radius: 50%; font-weight: bold; color: #cbd6e2; font-size: 18px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); z-index: 4; box-sizing: border-box;
+        }}
+        .stepper-item .step-name {{
+            margin-top: 8px; font-size: 12px; font-weight: 600; color: #5c6b73; text-align: center;
+        }}
+        .stepper-item.completed .step-counter {{
+            background-color: #2fae6e; border-color: #2fae6e; color: white;
+        }}
+        .stepper-item.completed .step-name {{
+            color: #3b719f; font-weight: bold;
+        }}
+        .stepper-line-active {{
+            position: absolute; top: 18px; left: 0; height: 12px; background: linear-gradient(90deg, #2fae6e, #34d399); border-radius: 10px; z-index: 2;
         }}
     </style>
 """, unsafe_allow_html=True)
@@ -520,9 +451,9 @@ CSS_DET = """<style>
 .dt-3{grid-template-columns:repeat(3,1fr)}
 .dt-1{grid-template-columns:1fr;margin-top:14px}
 @media(max-width:760px){.dt-3{grid-template-columns:1fr}}
-.dt-card{background:#fff;border-radius:18px;padding:16px 14px;text-align:center;box-shadow:0 3px 10px rgba(27,79,147,.10);border-top:4px solid #7c93fb;display:flex;flex-direction:column;justify-content:center;min-height:86px}
+.dt-card{background:#fff;border-radius:18px;padding:16px 14px;text-align:center;box-shadow:0 3px 10px rgba(59,113,159,.10);border-top:4px solid #3b719f;display:flex;flex-direction:column;justify-content:center;min-height:86px}
 .dt-l{font-size:11.5px;font-weight:700;letter-spacing:.6px;color:#6b7a90;text-transform:uppercase}
-.dt-v{font-size:22px;font-weight:700;color:#4f67e8;margin-top:6px;line-height:1.25;overflow-wrap:anywhere}
+.dt-v{font-size:22px;font-weight:700;color:#3b719f;margin-top:6px;line-height:1.25;overflow-wrap:anywhere}
 .dt-v.sm{font-size:18px}
 .dt-v.vazio{color:#9aa7ba;font-weight:600}
 .dt-obs{background:#fff8e6;border-top-color:#f5a623}
@@ -613,16 +544,7 @@ def abas_do_usuario(cfg):
     return {str(a).strip().lower() for a in abas} & ABAS_RESTRITAS
 
 
-# --- BANNER CORPORATIVO ---
-st.markdown("""
-    <div class="header-banner">
-        <h1>WELCOME TO THE PIONEERS OF FLOW</h1>
-        <p>Portal Logístico de Rastreamento de Pedidos em Tempo Real</p>
-    </div>
-""", unsafe_allow_html=True)
-
-
-st.write("")
+# --- LEITURA DE DADOS E AUTENTICAÇÃO ---
 try:
     todos_dados = ler_valores(NOME_DA_ABA)
     linhas_pedidos = [l for l in todos_dados[1:] if any(l)]
@@ -711,7 +633,7 @@ with st.sidebar:
             st.session_state["sidebar_expanded"] = True
             st.rerun()
 
-    st.markdown('<div style="border-bottom:1px solid #e8edfb;margin-bottom:16px;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="border-bottom:1px solid rgba(255,255,255,.22);margin-bottom:16px;"></div>', unsafe_allow_html=True)
 
     for _k in chaves:
         _label = nomes_completos_todos[_k] if expandido else icones_apenas_todos[_k]
@@ -729,6 +651,23 @@ with st.sidebar:
 pagina = st.session_state["pagina"]
 if pagina not in chaves:
     pagina = "consulta"
+
+# ======================= CABEÇALHO DA PÁGINA =======================
+PAGINAS = {
+    "consulta": ("Onde está o pedido.", "Portal Logístico de Rastreamento de Pedidos em Tempo Real."),
+    "pendentes": ("Pendentes de coleta.", "Acompanhe e gerencie a lista de coletas pendentes."),
+    "conserto": ("Conserto / Reparo.", "Verifique o andamento de notas e peças em manutenção."),
+    "dashboard": ("Visão Geral.", "Métricas de lead time, volume faturado e gargalos de expedição."),
+}
+_tit, _sub = PAGINAS.get(pagina, ("Pioneers of Flow.", ""))
+st.markdown(f"""
+    <div class="header-banner">
+        <div class="hb-kicker">PIONEERS OF FLOW</div>
+        <h1>{esc(_tit)}</h1>
+        <p>{esc(_sub)}</p>
+    </div>
+""", unsafe_allow_html=True)
+
 
 # ================= 1. CONSULTA =================
 if pagina == "consulta":
@@ -839,9 +778,9 @@ if pagina == "pendentes":
         html_tab = "\n".join(l.strip() for l in sty.to_html().splitlines() if l.strip())
         st.markdown(
             """<style>
-            .tabela-pend{max-height:620px;overflow:auto;border-radius:8px;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+            .tabela-pend{max-height:620px;overflow:auto;border-radius:12px;background:#fff;box-shadow:0 4px 14px rgba(59,113,159,.10)}
             .tabela-pend table{width:100%;border-collapse:collapse;font-size:14px}
-            .tabela-pend th{position:sticky;top:0;background:#4f67e8;color:#fff;padding:10px 8px;z-index:1}
+            .tabela-pend th{position:sticky;top:0;background:#3b719f;color:#fff;padding:10px 8px;z-index:1}
             .tabela-pend td{padding:8px;border-bottom:1px solid #e4e9f0;text-align:center}
             </style>""" + f'<div class="tabela-pend">{html_tab}</div>',
             unsafe_allow_html=True)
@@ -857,11 +796,11 @@ CSS_DASH = """<style>
 .pf-r2{grid-template-columns:270px 1fr}
 .pf-r3{grid-template-columns:1.2fr 1fr 1fr}
 @media(max-width:1000px){.pf-r1,.pf-r2,.pf-r3{grid-template-columns:1fr}}
-.pf-card{background:#fff;border-radius:20px;padding:18px 20px;box-shadow:0 8px 24px rgba(79,103,232,.12);text-align:left;overflow:hidden}
+.pf-card{background:#fff;border-radius:20px;padding:18px 20px;box-shadow:0 3px 10px rgba(59,113,159,.10);text-align:left;overflow:hidden}
 .pf-t{font-size:12px;font-weight:700;letter-spacing:.5px;color:#5c6b83;text-transform:uppercase}
 .pf-s{font-size:12px;color:#8a97ab;margin-top:2px}
-.pf-v{font-size:36px;font-weight:700;color:#4f67e8;line-height:1.15;margin-top:6px}
-.pf-blue{background:linear-gradient(90deg,#7c93fb,#4f67e8);color:#fff;display:flex;flex-direction:column;justify-content:center}
+.pf-v{font-size:36px;font-weight:700;color:#3b719f;line-height:1.15;margin-top:6px}
+.pf-blue{background:linear-gradient(90deg,#6d8fb6,#3b719f);color:#fff;display:flex;flex-direction:column;justify-content:center}
 .pf-blue .pf-t,.pf-blue .pf-s{color:#e3edfb}
 .pf-duo{display:flex;justify-content:space-around;gap:10px;margin-top:8px}
 .pf-duo div{text-align:center}
@@ -871,14 +810,14 @@ CSS_DASH = """<style>
 .pf-don+.pf-don{margin-top:18px;padding-top:16px;border-top:1px solid #e1e9f5}
 .pf-big{display:flex;gap:18px;align-items:center}
 .pf-big .side{min-width:150px;text-align:left}
-.pf-big .side b{display:block;font-size:30px;color:#4f67e8;line-height:1.1}
+.pf-big .side b{display:block;font-size:30px;color:#3b719f;line-height:1.1}
 .pf-big .side span{font-size:12px;color:#8a97ab;display:block;margin-bottom:14px}
 .pf-li{margin-top:14px}
-.pf-lr{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:600;color:#2c3e57}
+.pf-lr{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:600;color:#1f3a57}
 .pf-lr span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pf-lr b{color:#4f67e8;white-space:nowrap}
+.pf-lr b{color:#3b719f;white-space:nowrap}
 .pf-tr{height:6px;border-radius:6px;background:#e1e9f5;margin-top:5px}
-.pf-fi{height:6px;border-radius:6px;background:linear-gradient(90deg,#7c93fb,#4f67e8)}
+.pf-fi{height:6px;border-radius:6px;background:linear-gradient(90deg,#6d8fb6,#3b719f)}
 </style>"""
 
 
@@ -901,14 +840,14 @@ def _spark(vals, w=240, h=46):
     pts = [(2 + i * (w - 4) / (len(vals) - 1), h - 8 - (v - mn) / rng * (h - 16)) for i, v in enumerate(vals)]
     d = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
     return (f'<svg viewBox="0 0 {w} {h}" width="100%" height="{h}" preserveAspectRatio="none">'
-            f'<defs><linearGradient id="sp{u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7c93fb" '
-            f'stop-opacity=".25"/><stop offset="1" stop-color="#7c93fb" stop-opacity="0"/></linearGradient></defs>'
+            f'<defs><linearGradient id="sp{u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6d8fb6" '
+            f'stop-opacity=".25"/><stop offset="1" stop-color="#6d8fb6" stop-opacity="0"/></linearGradient></defs>'
             f'<polygon points="2,{h} {d} {w-2},{h}" fill="url(#sp{u})"/>'
-            f'<polyline points="{d}" fill="none" stroke="#7c93fb" stroke-width="2.2" stroke-linejoin="round" '
+            f'<polyline points="{d}" fill="none" stroke="#6d8fb6" stroke-width="2.2" stroke-linejoin="round" '
             f'stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>')
 
 
-def _donut(pct, legenda, c1="#7c93fb", c2="#4f67e8"):
+def _donut(pct, legenda, c1="#6d8fb6", c2="#3b719f"):
     pct = max(0.0, min(100.0, pct))
     r = 42
     circ = 2 * 3.14159265 * r
@@ -919,7 +858,7 @@ def _donut(pct, legenda, c1="#7c93fb", c2="#4f67e8"):
             f'<circle cx="55" cy="55" r="{r}" fill="none" stroke="#dbe5f3" stroke-width="9"/>'
             f'<circle cx="55" cy="55" r="{r}" fill="none" stroke="url(#dn{u})" stroke-width="9" stroke-linecap="round" '
             f'stroke-dasharray="{circ * pct / 100:.1f} {circ:.1f}" transform="rotate(-90 55 55)"/>'
-            f'<text x="55" y="62" text-anchor="middle" font-size="22" font-weight="700" fill="#4f67e8">{pct:.0f}%</text>'
+            f'<text x="55" y="62" text-anchor="middle" font-size="22" font-weight="700" fill="#3b719f">{pct:.0f}%</text>'
             f'</svg><div class="pf-s">{legenda}</div></div>')
 
 
@@ -933,12 +872,12 @@ def _linha(rot, vals, w=640, h=230):
                     f'y2="{pt + (h - pt - pb) * k / 3:.1f}" stroke="#e1e9f5"/>' for k in range(4))
     pts = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in enumerate(vals))
     bolas = "".join(
-        f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="5" fill="#fff" stroke="#7c93fb" stroke-width="3"/>'
+        f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="5" fill="#fff" stroke="#6d8fb6" stroke-width="3"/>'
         f'<text x="{X(i):.1f}" y="{Y(v) - 11:.1f}" text-anchor="middle" font-size="11" font-weight="600" '
-        f'fill="#4f67e8">{v}</text>' for i, v in enumerate(vals))
+        f'fill="#3b719f">{v}</text>' for i, v in enumerate(vals))
     eixo = "".join(f'<text x="{X(i):.1f}" y="{h - 10}" text-anchor="middle" font-size="11" fill="#8a97ab">{r}</text>'
                    for i, r in enumerate(rot))
-    return (f'<svg viewBox="0 0 {w} {h}" width="100%">{grade}<polyline points="{pts}" fill="none" stroke="#7c93fb" '
+    return (f'<svg viewBox="0 0 {w} {h}" width="100%">{grade}<polyline points="{pts}" fill="none" stroke="#6d8fb6" '
             f'stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>{bolas}{eixo}</svg>')
 
 
@@ -957,10 +896,10 @@ def _barras(rot, vals, w=360, h=210):
                   + (f'<rect x="{x:.1f}" y="{bot - fh:.1f}" width="{bw:.1f}" height="{fh:.1f}" rx="{bw / 2:.1f}" '
                      f'fill="url(#br{u})"/>' if v > 0 else "")
                   + f'<text x="{x + bw / 2:.1f}" y="{top - 8}" text-anchor="middle" font-size="12" font-weight="700" '
-                    f'fill="#4f67e8">{v}</text>'
+                    f'fill="#3b719f">{v}</text>'
                   + f'<text x="{x + bw / 2:.1f}" y="{h - 12}" text-anchor="middle" font-size="11" fill="#8a97ab">{r}</text>')
     return (f'<svg viewBox="0 0 {w} {h}" width="100%"><defs><linearGradient id="br{u}" x1="0" y1="0" x2="0" y2="1">'
-            f'<stop offset="0" stop-color="#7c93fb"/><stop offset="1" stop-color="#4f67e8"/></linearGradient></defs>'
+            f'<stop offset="0" stop-color="#6d8fb6"/><stop offset="1" stop-color="#3b719f"/></linearGradient></defs>'
             f'{corpo}</svg>')
 
 
@@ -1030,7 +969,7 @@ def montar_dashboard(pend, r2, fat, sel, hoje):
     else:
         top_n, top_q = "—", 0
     k3 = (f'<div class="pf-card"><div class="pf-t">Maior reincidência</div><div class="pf-v">{top_q}x</div>'
-          f'<div class="pf-s" style="font-weight:600;color:#2c3e57">{esc(top_n)}</div>'
+          f'<div class="pf-s" style="font-weight:600;color:#1f3a57">{esc(top_n)}</div>'
           f'<div class="pf-s">Vezes faturadas para o mesmo cliente</div></div>')
 
     k4 = (f'<div class="pf-card pf-blue"><div class="pf-t">Pendentes de coleta</div>'
@@ -1040,7 +979,7 @@ def montar_dashboard(pend, r2, fat, sel, hoje):
     pct_atr = atras / total * 100 if total else 0
     pct_col = len(conc) / len(r2) * 100 if len(r2) else 0
     donuts = (_donut(pct_atr, "Pendentes de coleta em atraso")
-              + _donut(pct_col, "NFs de retorno já coletadas", "#ff9ac8", "#f06aa8"))
+              + _donut(pct_col, "NFs de retorno já coletadas", "#6d8fb6", "#3b719f"))
 
     if sel is not None:
         per = pd.period_range(end=sel, periods=12, freq="M")
@@ -1145,4 +1084,4 @@ if pagina == "conserto":
                 st.markdown("### 🔍 Detalhes:")
                 st.markdown(html_detalhes_conserto(r, info), unsafe_allow_html=True)
 
-st.markdown("<br><hr><div style='text-align: center; color: #6b7a90; font-size: 13px;'>Desenvolvido por Diego Elvis | Versão R.2.0</div>", unsafe_allow_html=True)
+st.markdown("<br><hr><div style='text-align: center; color: #6b7a90; font-size: 13px;'>Pioneers of Flow · Desenvolvido por Diego Elvis</div>", unsafe_allow_html=True)
