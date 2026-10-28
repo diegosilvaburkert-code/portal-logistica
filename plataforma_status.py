@@ -330,7 +330,7 @@ def status_conserto(r, coletas=None):
     elif s6:
         status = "🔵 Aguardando coleta"
         detalhe = (f"NF de retorno {r['NF retorno']} emitida em {r['Emissão NF saída']}. "
-                   "Aguardando o cliente coletar o material.")
+                   "Aguardando o cliente coletar el material.")
         if col.get("data_solic"):
             detalhe += f" Coleta solicitada em {col['data_solic']}."
     elif s4:
@@ -378,11 +378,12 @@ def html_timeline(passos, etapa):
 
 def df_controle(valores):
     cols = ["Responsável", "Operação", "Incoterm", "Cliente", "NF",
-            "Transportadora", "Coleta", "Data Solic.", "Data Col.", "Observações"]
-    linhas = [(l + [""] * 10)[:10] for l in valores[1:]]
+            "Transportadora", "Coleta", "Data Solic.", "Data Col.", "Observações", "Num Pedido"]
+    linhas = [(l + [""] * 11)[:11] for l in valores[1:]]
     df = pd.DataFrame(linhas, columns=cols)
-    df = df[df["NF"].str.strip() != ""].copy()
+    df = df[(df["NF"].str.strip() != "") | (df["Num Pedido"].str.strip() != "")].copy()
     df["NF"] = df["NF"].str.strip()
+    df["Num Pedido"] = df["Num Pedido"].str.strip()
     df["Data Solic."] = para_data(df["Data Solic."])
     df["Data Col."] = para_data(df["Data Col."])
     df["Lead time (dias)"] = (df["Data Col."].dt.normalize() - df["Data Solic."]).dt.days
@@ -403,6 +404,7 @@ def calcular_fluxo_status(linha):
     data_solic = pegar_valor(7)
     data_col = pegar_valor(8)
     observacoes = pegar_valor(9)
+    num_pedido = pegar_valor(10) # Coluna K (Número de Pedido)
 
     transportador_valido = transportador and transportador != "-"
 
@@ -436,7 +438,8 @@ def calcular_fluxo_status(linha):
         "detalhe": detalhe_operacional,
         "detalhes_card": {
             "Cliente": cliente,
-            "N.F.": nf,
+            "N.F.": nf if nf else "—",
+            "Número de Pedido": num_pedido if num_pedido else "—",
             "Incoterm": incoterm if incoterm else "Não informado",
             "Operação": operacao if operacao else "Não informada",
             "Transportador": transportador if transportador_valido else "Aguardando definição",
@@ -473,17 +476,19 @@ def html_detalhes_pedido(cards, data_col):
         cls = "dt-v" + (" vazio" if vazio else "") + (" sm" if extra == "sm" else "")
         return f'<div class="dt-card{" dt-obs" if extra == "obs" else ""}"><div class="dt-l">{rotulo}</div><div class="{cls}">{txt}</div></div>'
 
-    nao = ("Não solicitado", "Não realizado", "Não informado", "Não informada", "Aguardando definição")
-    linha1 = (cartao("🧾 Nota Fiscal", cards["N.F."])
-              + cartao("🚚 Modalidade de Frete", cards["Incoterm"], nao)
-              + cartao("📦 Natureza da Operação", cards["Operação"], nao))
-    linha2 = (cartao("🔖 Nº Coleta / Registro", cards["Coleta/Rastreio"], nao)
-              + cartao("📅 Data do Contato", cards["Data Contato"], nao)
-              + cartao("✅ Data da Coleta", data_col or "Ainda não coletada", ("Ainda não coletada",)))
+    nao = ("Não solicitado", "Não realizado", "Não informado", "Não informada", "Aguardando definição", "—")
+    linha1 = (cartao("🧾 Nota Fiscal", cards["N.F."], nao)
+              + cartao("📋 Nº de Pedido", cards["Número de Pedido"], nao)
+              + cartao("🚚 Modalidade de Frete", cards["Incoterm"], nao))
+    linha2 = (cartao("📦 Natureza da Operação", cards["Operação"], nao)
+              + cartao("🔖 Nº Coleta / Registro", cards["Coleta/Rastreio"], nao)
+              + cartao("📅 Data do Contato", cards["Data Contato"], nao))
+    linha3 = cartao("✅ Data da Coleta", data_col or "Ainda não coletada", ("Ainda não coletada",))
     transp = cartao("🏢 Transportador / Contato", cards["Transportador"], nao, "sm")
     sem_obs = "Nenhuma observação registrada para esta nota."
     obs = cartao("💬 Observações Gerais", cards["Observações"], (sem_obs,), "obs")
     h = (CSS_DET + f'<div class="dt-grid dt-3">{linha1}</div><div class="dt-grid dt-3" style="margin-top:14px">{linha2}</div>'
+         f'<div class="dt-grid dt-3" style="margin-top:14px">{linha3}</div>'
          f'<div class="dt-grid dt-1">{transp}</div><div class="dt-grid dt-1">{obs}</div>')
     return "\n".join(l.strip() for l in h.splitlines() if l.strip())
 
@@ -673,15 +678,18 @@ st.markdown(f"""
 if pagina == "consulta":
     _, mid, _ = st.columns([1, 3, 1])
     with mid:
-        st.write("Insira o número da Nota Fiscal abaixo para verificar o fluxo do processo.")
-        pesquisa = st.text_input("Digite o número exato da Nota Fiscal:", placeholder="Ex: 47219...").strip()
+        st.write("Insira o número da Nota Fiscal ou o Número de Pedido abaixo para verificar o fluxo do processo.")
+        pesquisa = st.text_input("Digite o número da Nota Fiscal ou Pedido:", placeholder="Ex: 47219...").strip()
 
         if pesquisa:
             pedido_encontrado = None
             for linha in list(linhas_pedidos):
                 if len(linha) > 4:
                     nf_numero = str(linha[4]).strip()
-                    if pesquisa == nf_numero:
+                    num_pedido = str(linha[10]).strip() if len(linha) > 10 else "" # Coluna K (índice 10)
+                    
+                    # Valida se bate com a NF ou com o Número de Pedido (se preenchido)
+                    if pesquisa == nf_numero or (num_pedido and pesquisa == num_pedido):
                         pedido_encontrado = linha
                         break
             
@@ -736,7 +744,7 @@ if pagina == "consulta":
                 data_col_pedido = str(pedido_encontrado[8]).strip() if len(pedido_encontrado) > 8 else ""
                 st.markdown(html_detalhes_pedido(cards, data_col_pedido), unsafe_allow_html=True)
             else:
-                st.warning(f"Nenhuma Nota Fiscal localizada com o número: '{pesquisa}'")
+                st.warning(f"Nenhum registro localizado com o número: '{pesquisa}'")
 
         if pesquisa:
             p = pend[pend["NF"] == pesquisa]
