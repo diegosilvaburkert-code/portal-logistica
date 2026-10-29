@@ -638,7 +638,30 @@ th i{font-style:normal;margin-left:4px;font-size:11px;opacity:0.8}
 td{padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;color:#334155;background:#ffffff}
 tr:nth-child(even) td{background:#fafcfd}
 tr:hover td{background:#f1f5f9}
-.status-pill{display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:.3px;background:#3b719f}
+
+.status-pill{
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    white-space: nowrap;
+    background: #eef3f8;
+    color: #3b719f;
+    border: 1px solid #cbd5e1;
+}
+.status-pill.vendedor{
+    background: #f8fafc;
+    color: #475569;
+    border-color: #cbd5e1;
+}
+.status-pill.aguardando{
+    background: #e0f2fe;
+    color: #0369a1;
+    border-color: #bae6fd;
+}
 """
 
 _JS_TAB_PEND = """
@@ -741,7 +764,6 @@ def html_tabela_pendentes(df):
     linhas = ""
     for r in regs:
         d = r["Dias pendente"]
-        # Barra lateral fina indicando urgência (Vermelho > 5 dias, Amarelo > PRAZO_ALERTA, Cinza/Azul padrão)
         borda_esquerda = "#e53935" if (pd.notna(d) and d > 5) else ("#f5b301" if (pd.notna(d) and d > PRAZO_ALERTA) else "#cbd5e1")
         
         tds = ""
@@ -750,7 +772,9 @@ def html_tabela_pendentes(df):
             val_chave = chave(r, k, t)
             
             if k == "Status":
-                conteudo = f'<span class="status-pill">{esc(val_txt)}</span>'
+                st_lower = val_txt.lower()
+                extra_cls = "vendedor" if "vendedor" in st_lower else "aguardando"
+                conteudo = f'<span class="status-pill {extra_cls}">{esc(val_txt)}</span>'
                 tds += f'<td data-v="{esc(val_chave)}">{conteudo}</td>'
             else:
                 tds += f'<td data-v="{esc(val_chave)}">{esc(val_txt)}</td>'
@@ -964,7 +988,7 @@ if pagina == "consulta":
         data_col_pedido = str(pedido_encontrado[8]).strip() if len(pedido_encontrado) > 8 else ""
         st.markdown(html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend), unsafe_allow_html=True)
 
-# ================= 2. PENDENTES (NOVO LAYOUT COESO) =================
+# ================= 2. PENDENTES =================
 if pagina == "pendentes":
     with st.container():
         st.caption(f"Clique no título de uma coluna para ordenar · clique no botão **Filtrar Tabela** acima da tabela para exibir os campos de filtro · "
