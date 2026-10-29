@@ -11,6 +11,7 @@ from itertools import count
 import gspread
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 # ======================= CONFIGURAÇÃO DA GOOGLE SHEET =======================
 LINK_PLANILHA = "https://google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En0FEYfpVs-58e9S0/edit?gid=0#gid=0"
@@ -402,11 +403,6 @@ def html_timeline_pedido(num_etapa):
     nomes = ["Em Separação", "Faturado", "Coleta Solicitada", "Coleta Efetivada"]
     n = len(nomes)
     
-    # Identifica exatamente qual o índice da etapa atual (0 a n-1)
-    # num_etapa 1 = Em Separação (índice 0)
-    # num_etapa 2 = Faturado (índice 1)
-    # num_etapa 3 = Coleta Solicitada (índice 2)
-    # num_etapa 4 = Coleta Efetivada (índice 3)
     idx_atual = num_etapa - 1 if 1 <= num_etapa <= n else -1
 
     passos = []
@@ -414,13 +410,12 @@ def html_timeline_pedido(num_etapa):
         if i < num_etapa:
             passos.append("ok")
         elif i == num_etapa:
-            passos.append("pendente")  # pendente faz o mapeamento do item atual no estilo .cur
+            passos.append("pendente")
         else:
             passos.append("pendente")
 
     segs = ""
     for k, p in enumerate(passos, start=1):
-        # Pinta a barra de progresso se a etapa anterior já foi concluída
         cor = COR_TRECHO_CS["ok"] if k < num_etapa else ""
         if not cor:
             continue
@@ -623,6 +618,158 @@ def calcular_fluxo_status(linha):
     }
 
 
+# ================= TABELA INTERATIVA ESTILO EXCEL (COM BARRA LATERAL) =================
+_CSS_TAB_PEND = """
+body{margin:0;background:transparent;font-family:"Source Sans Pro",Arial,sans-serif;color:#1f3a57}
+.table-container{background:#fff;border-radius:18px;box-shadow:0 4px 20px rgba(59,113,159,.08);overflow:hidden;border:1px solid #e2e8f0;margin-top:10px}
+.table-header-bar{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;background:#f8fafc;border-bottom:1px solid #e2e8f0}
+.filter-toggle-btn{background:#3b719f;color:#fff;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px;transition:all .2s}
+.filter-toggle-btn:hover{background:#2c5a82}
+.record-count{font-size:13px;color:#64748b;font-weight:600}
+.tb-wrapper{max-height:580px;overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{position:sticky;top:0;background:#3b719f;color:#fff;padding:12px 10px;z-index:2;cursor:pointer;user-select:none;white-space:nowrap;text-align:center;font-weight:700}
+th:hover{background:#2c5a82}
+th i{font-style:normal;margin-left:4px;font-size:11px;opacity:0.8}
+.filter-row{display:none;background:#f1f5f9;border-bottom:2px solid #cbd5e1}
+.filter-row.active{display:table-row}
+.filter-row td{padding:8px 6px;text-align:center}
+.filter-row input,.filter-row select{width:100%;box-sizing:border-box;padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;background:#fff;color:#1e293b}
+td{padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;color:#334155;background:#ffffff}
+tr:nth-child(even) td{background:#fafcfd}
+tr:hover td{background:#f1f5f9}
+.status-pill{display:inline-block;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:.3px;background:#3b719f}
+"""
+
+_JS_TAB_PEND = """
+const tb=document.querySelector('#t tbody');let rows=[...tb.rows];
+const ths=[...document.querySelectorAll('th[data-col]')];
+const fls=[...document.querySelectorAll('.filter-row [data-f]')];
+const cnt=document.getElementById('cnt');
+const toggleBtn=document.getElementById('toggleFilters');
+const filterRow=document.getElementById('filterRow');
+let col=-1,dir=1, filtersVisible=false;
+
+toggleBtn.addEventListener('click', ()=>{
+    filtersVisible = !filtersVisible;
+    filterRow.classList.toggle('active', filtersVisible);
+    toggleBtn.innerHTML = filtersVisible ? '🔍 Ocultar Filtros' : '🔍 Filtrar Tabela';
+});
+
+function marcar(){ths.forEach((h,i)=>h.querySelector('i').textContent=i===col?(dir>0?'▲':'▼'):'');}
+
+function filtrar(){
+    let n=0;
+    rows.forEach(r=>{
+        let ok=true;
+        fls.forEach((el,i)=>{
+            const v=el.value.toLowerCase();
+            if(!v)return;
+            const txt=r.cells[i].textContent.trim().toLowerCase();
+            if(el.tagName==='SELECT'?txt!==v:txt.indexOf(v)<0)ok=false;
+        });
+        r.style.display=ok?'':'none';
+        if(ok)n++;
+    });
+    cnt.textContent=n+' de '+rows.length+' caso(s)';
+}
+
+function ordenar(i){
+    dir=(col===i)?-dir:1;col=i;const num=ths[i].dataset.t!=='t';
+    rows.sort((a,b)=>{
+        let x=a.cells[i].dataset.v,y=b.cells[i].dataset.v;
+        if(num){
+            x=parseFloat(x);y=parseFloat(y);
+            const nx=isNaN(x),ny=isNaN(y);
+            if(nx&&ny)return 0;if(nx)return 1;if(ny)return -1;
+            return (x-y)*dir;
+        }
+        return x.localeCompare(y,'pt-BR')*dir;
+    });
+    rows.forEach(r=>tb.appendChild(r));marcar();
+}
+
+ths.forEach((h,i)=>h.addEventListener('click',()=>ordenar(i)));
+fls.forEach(el=>{el.addEventListener('input',filtrar);el.addEventListener('change',filtrar);});
+document.getElementById('lp').addEventListener('click',()=>{fls.forEach(el=>el.value='');filtrar();});
+col=__DIAS__;dir=-1;marcar();filtrar();
+"""
+
+
+def html_tabela_pendentes(df):
+    cols = [
+        ("NF", "NF", "t"),
+        ("Cliente", "Cliente", "t"),
+        ("Frete", "Frete", "t"),
+        ("Transporte", "Transporte", "t"),
+        ("Ordem de coleta", "Ordem de coleta", "t"),
+        ("Data Solicitação", "Data Solicitação", "d"),
+        ("Dias pendente", "Dias pendente", "n"),
+        ("Status", "Status", "t")
+    ]
+    regs = df.to_dict("records")
+
+    def texto(r, k):
+        v = r[k]
+        if v is None or (isinstance(v, float) and pd.isna(v)) or v == "":
+            return "-"
+        if k == "Data Solicitação" and pd.notna(v):
+            return pd.to_datetime(v).strftime("%d/%m/%Y")
+        if k == "Dias pendente":
+            return f"{int(v)}"
+        return str(v)
+
+    def chave(r, k, tipo):
+        if tipo == "n":
+            return "" if pd.isna(r[k]) else str(int(r[k]))
+        if tipo == "d":
+            d = para_data(r[k])
+            return "" if pd.isna(d) else str(d.toordinal())
+        return _norm(texto(r, k))
+
+    th = "".join(f'<th data-col data-t="{t}">{n}<i></i></th>' for n, _, t in cols)
+    
+    fl = ""
+    for n, k, t in cols:
+        vals = sorted({texto(r, k) for r in regs}, key=_norm)
+        if t == "t" and len(vals) <= 25:
+            ops = '<option value="">Todos</option>' + "".join(f'<option value="{esc(v.lower())}">{esc(v)}</option>' for v in vals)
+            fl += f'<td><select data-f>{ops}</select></td>'
+        else:
+            fl += '<td><input data-f type="text" placeholder="Filtrar..."></td>'
+            
+    linhas = ""
+    for r in regs:
+        d = r["Dias pendente"]
+        # Barra lateral fina indicando urgência (Vermelho > 5 dias, Amarelo > PRAZO_ALERTA, Cinza/Azul padrão)
+        borda_esquerda = "#e53935" if (pd.notna(d) and d > 5) else ("#f5b301" if (pd.notna(d) and d > PRAZO_ALERTA) else "#cbd5e1")
+        
+        tds = ""
+        for _, k, t in cols:
+            val_txt = texto(r, k)
+            val_chave = chave(r, k, t)
+            
+            if k == "Status":
+                conteudo = f'<span class="status-pill">{esc(val_txt)}</span>'
+                tds += f'<td data-v="{esc(val_chave)}">{conteudo}</td>'
+            else:
+                tds += f'<td data-v="{esc(val_chave)}">{esc(val_txt)}</td>'
+                
+        linhas += f'<tr style="border-left: 5px solid {borda_esquerda};">{tds}</tr>'
+        
+    js = _JS_TAB_PEND.replace("__DIAS__", str([c[1] for c in cols].index("Dias pendente")))
+    
+    return (f'<!DOCTYPE html><html><head><meta charset="utf-8"><style>{_CSS_TAB_PEND}</style></head><body>'
+            f'<div class="table-container">'
+            f'<div class="table-header-bar"><button id="toggleFilters" class="filter-toggle-btn">🔍 Filtrar Tabela</button>'
+            f'<span class="record-count" id="cnt"></span><button id="lp" style="background:#e2e8f0;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:#334155;font-weight:600">Limpar Filtros</button></div>'
+            f'<div class="tb-wrapper"><table id="t"><thead>'
+            f'<tr>{th}</tr>'
+            f'<tr class="filter-row" id="filterRow">{fl}</tr>'
+            f'</thead><tbody>{linhas}</tbody></table></div></div>'
+            f'<script>{js}</script></body></html>')
+
+
 ABAS_RESTRITAS = {"pendentes", "dashboard"}
 
 
@@ -817,48 +964,22 @@ if pagina == "consulta":
         data_col_pedido = str(pedido_encontrado[8]).strip() if len(pedido_encontrado) > 8 else ""
         st.markdown(html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend), unsafe_allow_html=True)
 
-# ================= 2. PENDENTES =================
+# ================= 2. PENDENTES (NOVO LAYOUT COESO) =================
 if pagina == "pendentes":
     with st.container():
-        f1, f2, f3, f4 = st.columns(4)
-        frete = f1.multiselect("Frete", sorted(pend["Frete"].unique()))
-        status = f2.multiselect("Status", sorted(pend["Status"].unique()))
-        cliente = f3.multiselect("Cliente", sorted(pend["Cliente"].unique()))
-        so_atr = f4.toggle(f"Só atrasados (> {PRAZO_ALERTA} dias)")
-
+        st.caption(f"Clique no título de uma coluna para ordenar · clique no botão **Filtrar Tabela** acima da tabela para exibir os campos de filtro · "
+                   f"amarelo > {PRAZO_ALERTA} dias · vermelho > 5 dias desde a solicitação")
+        
         v = pend.copy()
-        if frete: v = v[v["Frete"].isin(frete)]
-        if status: v = v[v["Status"].isin(status)]
-        if cliente: v = v[v["Cliente"].isin(cliente)]
-        if so_atr: v = v[v["Atrasado"]]
-
-        st.caption(f"{len(v)} caso(s) pendente(s)")
-        cols = ["NF", "Cliente", "Frete", "Transporte", "Ordem de coleta",
-                "Data Solicitação", "Dias pendente"]
-        v = v.sort_values("Dias pendente", ascending=False)[cols]
-
-        def cor(row):
-            d = row["Dias pendente"]
-            c = "#fde2e2" if d > 5 else "#fff3d6" if d > PRAZO_ALERTA else ""
-            return [f"background-color:{c}"] * len(row)
-
-        sty = (v.style.apply(cor, axis=1)
-               .format({"Data Solicitação": lambda d: d.strftime("%d/%m/%Y") if pd.notna(d) else "-",
-                        "Dias pendente": "{:.0f}"}, escape="html", na_rep="-")
-               .hide(axis="index")
-               .set_properties(**{"text-align": "center"})
-               .set_table_styles([{"selector": "th", "props": [("text-align", "center")]}]))
-        html_tab = "\n".join(l.strip() for l in sty.to_html().splitlines() if l.strip())
-        st.markdown(
-            """<style>
-            .tabela-pend{max-height:620px;overflow:auto;border-radius:12px;background:#fff;box-shadow:0 4px 14px rgba(59,113,159,.10)}
-            .tabela-pend table{width:100%;border-collapse:collapse;font-size:14px}
-            .tabela-pend th{position:sticky;top:0;background:#3b719f;color:#fff;padding:10px 8px;z-index:1}
-            .tabela-pend td{padding:8px;border-bottom:1px solid #e4e9f0;text-align:center}
-            </style>""" + f'<div class="tabela-pend">{html_tab}</div>',
-            unsafe_allow_html=True)
-        st.download_button("⬇️ Baixar CSV", v.to_csv(index=False).encode("utf-8-sig"),
-                           "pendentes.csv", "text/csv")
+        v = v.sort_values("Dias pendente", ascending=False)
+        
+        components.html(html_tabela_pendentes(v), height=660, scrolling=False)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        cols_dl = st.columns([1, 4, 1])
+        with cols_dl[1]:
+            st.download_button("⬇️ Baixar Relatório em CSV", v[["NF", "Cliente", "Frete", "Transporte", "Ordem de coleta", "Data Solicitação", "Dias pendente", "Status"]].to_csv(index=False).encode("utf-8-sig"),
+                               "pendentes_coleta.csv", "text/csv", use_container_width=True)
 
 # ================= 3. DASHBOARD =================
 _uid = count(1)
