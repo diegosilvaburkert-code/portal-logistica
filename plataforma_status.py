@@ -403,31 +403,35 @@ def html_timeline_pedido(num_etapa):
     nomes = ["Em Separação", "Faturado", "Coleta Solicitada", "Coleta Efetivada"]
     n = len(nomes)
     
-    idx_atual = num_etapa - 1 if 1 <= num_etapa <= n else -1
-
     passos = []
     for i in range(1, n + 1):
         if i < num_etapa:
             passos.append("ok")
         elif i == num_etapa:
-            passos.append("pendente")
+            if num_etapa == n:
+                passos.append("ok")
+            else:
+                passos.append("pendente")
         else:
             passos.append("pendente")
 
     segs = ""
     for k, p in enumerate(passos, start=1):
-        cor = COR_TRECHO_CS["ok"] if k < num_etapa else ""
+        cor = COR_TRECHO_CS["ok"] if k < num_etapa or (num_etapa == n and k <= n) else ""
         if not cor:
             continue
         ini = 0 if k == 1 else (k - 1.5) / n * 100
         larg = (0.5 if k == 1 else 1) / n * 100 + 0.15
-        raio = "10px 0 0 10px" if k == 1 else "0"
+        raio = "10px 0 0 10px" if k == 1 else ("0 10px 10px 0" if k == n else "0")
         segs += f'<div class="tl-seg" style="left:{ini:.3f}%;width:{larg:.3f}%;background:{cor};border-radius:{raio}"></div>'
+
+    if num_etapa == n:
+        segs += f'<div class="tl-seg" style="left:{(n - 0.5) / n * 100:.3f}%;width:{0.5 / n * 100:.3f}%;background:{COR_TRECHO_CS["ok"]};border-radius:0 10px 10px 0"></div>'
 
     itens = ""
     for i, (nome, p) in enumerate(zip(nomes, passos), start=1):
-        is_ok = i < num_etapa
-        is_cur = (i == num_etapa)
+        is_ok = p == "ok"
+        is_cur = (i == num_etapa and num_etapa < n)
         
         cls = "ok" if is_ok else ("cur" if is_cur else "")
         ic = "✓" if is_ok else ""
