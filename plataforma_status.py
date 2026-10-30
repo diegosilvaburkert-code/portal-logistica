@@ -402,7 +402,7 @@ def html_timeline(passos, etapa=None):
     return f'<div class="tl-wrap">{segs}{itens}</div>'
 
 
-def html_timeline_pedido(num_etapa, cancelado=False):
+def html_timeline_pedido(num_etapa, coleta_concluida=False, cancelado=False):
     nomes = ["Em Separação", "Faturado", "Coleta Solicitada", "Coleta Efetivada"]
     n = len(nomes)
     
@@ -413,7 +413,7 @@ def html_timeline_pedido(num_etapa, cancelado=False):
         elif i < num_etapa:
             passos.append("ok")
         elif i == num_etapa:
-            if num_etapa == n:
+            if i == n and coleta_concluida:
                 passos.append("ok")
             else:
                 passos.append("pendente")
@@ -425,7 +425,9 @@ def html_timeline_pedido(num_etapa, cancelado=False):
         if cancelado:
             cor = "#e53935"
         else:
-            cor = COR_TRECHO_CS["ok"] if k < num_etapa or (num_etapa == n and k <= n) else ""
+            # Pinta o trecho de verde se a etapa for menor que num_etapa, ou se chegou ao fim e coleta está concluída
+            concluido_ate_aqui = (k < num_etapa) or (k == num_etapa and num_etapa == n and coleta_concluida)
+            cor = COR_TRECHO_CS["ok"] if concluido_ate_aqui else ""
         if not cor:
             continue
         ini = 0 if k == 1 else (k - 1.5) / n * 100
@@ -435,7 +437,7 @@ def html_timeline_pedido(num_etapa, cancelado=False):
 
     if cancelado:
         segs = f'<div class="tl-seg" style="left:0%;width:100%;background:#e53935;border-radius:10px"></div>'
-    elif num_etapa == n:
+    elif coleta_concluida:
         segs += f'<div class="tl-seg" style="left:{(n - 0.5) / n * 100:.3f}%;width:{0.5 / n * 100:.3f}%;background:{COR_TRECHO_CS["ok"]};border-radius:0 10px 10px 0"></div>'
 
     itens = ""
@@ -446,7 +448,7 @@ def html_timeline_pedido(num_etapa, cancelado=False):
             tag = "Cancelado"
         else:
             is_ok = p == "ok"
-            is_cur = (i == num_etapa and num_etapa < n)
+            is_cur = (i == num_etapa and not (i == n and coleta_concluida))
             cls = "ok" if is_ok else ("cur" if is_cur else "")
             ic = "✓" if is_ok else ""
             tag = "Em andamento" if is_cur else ("Concluído" if is_ok else "")
@@ -538,7 +540,7 @@ def html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend):
             f'<div style="font-size:14px;color:#5c6b73;margin-top:6px">{esc(det)}</div>{aviso_pend}</div></div>')
 
     fluxo = (f'<div class="cs-card"><div class="cs-k">Fluxo do Processo</div>'
-             f'{html_timeline_pedido(info["etapa_atingida"], info["cancelado"])}</div>')
+             f'{html_timeline_pedido(info["etapa_atingida"], info["coleta_concluida"], info["cancelado"])}</div>')
 
     def linha(rot, valor, pill=""):
         v = str(valor).strip()
@@ -603,16 +605,23 @@ def calcular_fluxo_status(linha):
     etapa_atingida = 1 
     status_atual = "🟠 Em Separação"
     detalhe_operacional = f"Pedido em separação técnica. Responsável pela ação: {responsavel if responsavel else 'Não informado'}."
+    coleta_concluida = False
 
     if cancelado:
         status_atual = "❌ Pedido Cancelado"
         detalhe_operacional = "Esta Nota Fiscal consta como cancelada no sistema."
     else:
-        # Etapa 2: Faturado / Embalagem (Cliente e NF preenchidos)
+        # Etapa 1: Em Separação (NF preenchida)
         if nf and nf != "None" and nf != "":
+            etapa_atingida = 1
+            status_atual = "🟠 Em Separação"
+            detalhe_operacional = f"Nota Fiscal {nf} em processo de separação."
+
+        # Etapa 2: Faturado / Embalagem (Cliente e NF preenchidos)
+        if cliente and cliente != "None" and cliente != "" and nf and nf != "None" and nf != "":
             etapa_atingida = 2
             status_atual = "🟡 Embalagem / Faturado"
-            detalhe_operacional = f"Nota Fiscal {nf} emitida e cliente preenchido. Aguardando solicitação de coleta."
+            detalhe_operacional = f"Nota Fiscal {nf} emitida e cliente preenchido. Pedido faturado."
 
         # Etapa 3: Coleta Solicitada (Colunas G e H preenchidas)
         if (coleta and coleta != "None" and coleta != "") and (data_solic and data_solic != "None" and data_solic != ""):
@@ -623,10 +632,11 @@ def calcular_fluxo_status(linha):
         # Etapa 4: Coleta Efetivada (Coluna I DATA Col. preenchida)
         if data_col and data_col != "None" and data_col != "":
             etapa_atingida = 4
+            coleta_concluida = True
             status_atual = "🟢 Coleta Efetivada"
             detalhe_operacional = f"Material coletado e efetivado em: {data_col}."
         elif (coleta and coleta != "None" and coleta != "") and (data_solic and data_solic != "None" and data_solic != ""):
-            # Se a coleta foi solicitada mas ainda não foi efetivada, a fase 4 fica em andamento
+            # Se a coleta foi solicitada mas a data da coleta (I) está vazia, a etapa ativa é 4 (em andamento)
             etapa_atingida = 4
             status_atual = "🔵 Coleta Solicitada — Aguardando Efetivação"
             detalhe_operacional = f"Coleta solicitada. Aguardando a efetivação (preenchimento da data de coleta)."
@@ -636,6 +646,7 @@ def calcular_fluxo_status(linha):
         "status_atual": status_atual,
         "detalhe": detalhe_operacional,
         "cancelado": cancelado,
+        "coleta_concluida": coleta_concluida,
         "detalhes_card": {
             "Cliente": cliente if cliente else "—",
             "N.F.": nf if nf else "—",
