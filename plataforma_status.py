@@ -594,15 +594,22 @@ def calcular_fluxo_status(linha):
         status_atual = "🟡 Faturado"
         detalhe_operacional = f"Nota Fiscal {nf} emitida. Aguardando agendamento ou contato do transportador."
 
-    if coleta and coleta != "None" and coleta != "":
+    # Se há Coleta registrada OU Data Solicitação preenchida, a coleta já foi solicitada (Avança para a etapa 3 concluída / etapa 4 em andamento)
+    if (coleta and coleta != "None" and coleta != "") or (data_solic and data_solic != "None" and data_solic != ""):
         etapa_atingida = 3
         status_atual = "🔵 Coleta Solicitada"
-        detalhe_operacional = f"Solicitação realizada sob o registro/contato: '{coleta}'."
+        detalhe_operacional = f"Solicitação realizada sob o registro/contato: '{coleta if coleta else data_solic}'."
 
+    # Se a Data da Coleta (coluna I) estiver preenchida, a coleta foi efetivada (Etapa 4 concluída)
     if data_col and data_col != "None" and data_col != "":
         etapa_atingida = 4
         status_atual = "🟢 Coleta Efetivada"
         detalhe_operacional = f"Material coletado e retirado da expedição física em: {data_col}."
+    elif (coleta and coleta != "None" and coleta != "") or (data_solic and data_solic != "None" and data_solic != ""):
+        # Se foi solicitada mas ainda não tem data de coleta, a próxima etapa (Coleta Efetivada) fica em andamento (etapa 4)
+        etapa_atingida = 4
+        status_atual = "🔵 Coleta Solicitada — Aguardando Efetivação"
+        detalhe_operacional = f"Coleta solicitada. Aguardando a efetivação (preenchimento da data de coleta)."
 
     return {
         "etapa_atingida": etapa_atingida,
