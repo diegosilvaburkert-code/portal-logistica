@@ -366,10 +366,13 @@ CSS_CS = """<style>
 .tl-item.bad .tl-c{background:#e53935;border-color:#e53935}
 .tl-item.bad .tl-n{color:#e53935;font-weight:800}
 .tl-item.bad .tl-t{color:#e53935}
+.tl-item.cancelado .tl-c{background:#e53935;border-color:#e53935}
+.tl-item.cancelado .tl-n{color:#e53935;font-weight:800}
+.tl-item.cancelado .tl-t{color:#e53935}
 .tl-item.ok:last-child .tl-t{color:#1e8e5a}
 </style>"""
 
-COR_TRECHO_CS = {"ok": "#2fae6e", "bloqueado": "#e53935"}
+COR_TRECHO_CS = {"ok": "#2fae6e", "bloqueado": "#e53935", "cancelado": "#e53935"}
 
 
 def html_timeline(passos, etapa=None):
@@ -399,13 +402,15 @@ def html_timeline(passos, etapa=None):
     return f'<div class="tl-wrap">{segs}{itens}</div>'
 
 
-def html_timeline_pedido(num_etapa):
+def html_timeline_pedido(num_etapa, cancelado=False):
     nomes = ["Em Separação", "Faturado", "Coleta Solicitada", "Coleta Efetivada"]
     n = len(nomes)
     
     passos = []
     for i in range(1, n + 1):
-        if i < num_etapa:
+        if cancelado:
+            passos.append("cancelado")
+        elif i < num_etapa:
             passos.append("ok")
         elif i == num_etapa:
             if num_etapa == n:
@@ -417,7 +422,10 @@ def html_timeline_pedido(num_etapa):
 
     segs = ""
     for k, p in enumerate(passos, start=1):
-        cor = COR_TRECHO_CS["ok"] if k < num_etapa or (num_etapa == n and k <= n) else ""
+        if cancelado:
+            cor = "#e53935"
+        else:
+            cor = COR_TRECHO_CS["ok"] if k < num_etapa or (num_etapa == n and k <= n) else ""
         if not cor:
             continue
         ini = 0 if k == 1 else (k - 1.5) / n * 100
@@ -425,17 +433,23 @@ def html_timeline_pedido(num_etapa):
         raio = "10px 0 0 10px" if k == 1 else ("0 10px 10px 0" if k == n else "0")
         segs += f'<div class="tl-seg" style="left:{ini:.3f}%;width:{larg:.3f}%;background:{cor};border-radius:{raio}"></div>'
 
-    if num_etapa == n:
+    if cancelado:
+        segs = f'<div class="tl-seg" style="left:0%;width:100%;background:#e53935;border-radius:10px"></div>'
+    elif num_etapa == n:
         segs += f'<div class="tl-seg" style="left:{(n - 0.5) / n * 100:.3f}%;width:{0.5 / n * 100:.3f}%;background:{COR_TRECHO_CS["ok"]};border-radius:0 10px 10px 0"></div>'
 
     itens = ""
     for i, (nome, p) in enumerate(zip(nomes, passos), start=1):
-        is_ok = p == "ok"
-        is_cur = (i == num_etapa and num_etapa < n)
-        
-        cls = "ok" if is_ok else ("cur" if is_cur else "")
-        ic = "✓" if is_ok else ""
-        tag = "Em andamento" if is_cur else ("Concluído" if is_ok else "")
+        if cancelado:
+            cls = "cancelado"
+            ic = "✕"
+            tag = "Cancelado"
+        else:
+            is_ok = p == "ok"
+            is_cur = (i == num_etapa and num_etapa < n)
+            cls = "ok" if is_ok else ("cur" if is_cur else "")
+            ic = "✓" if is_ok else ""
+            tag = "Em andamento" if is_cur else ("Concluído" if is_ok else "")
         
         itens += f'<div class="tl-item {cls}"><div class="tl-c">{ic}</div><div class="tl-n">{nome}</div><div class="tl-t">{tag}</div></div>'
         
@@ -524,7 +538,7 @@ def html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend):
             f'<div style="font-size:14px;color:#5c6b73;margin-top:6px">{esc(det)}</div>{aviso_pend}</div></div>')
 
     fluxo = (f'<div class="cs-card"><div class="cs-k">Fluxo do Processo</div>'
-             f'{html_timeline_pedido(info["etapa_atingida"])}</div>')
+             f'{html_timeline_pedido(info["etapa_atingida"], info["cancelado"])}</div>')
 
     def linha(rot, valor, pill=""):
         v = str(valor).strip()
@@ -584,46 +598,53 @@ def calcular_fluxo_status(linha):
     num_pedido = pegar_valor(10)
 
     transportador_valido = transportador and transportador != "-"
+    cancelado = "cancelada" in operacao.lower()
 
     etapa_atingida = 1 
-    status_atual = "🟠 Em Separação / Embalagem"
+    status_atual = "🟠 Em Separação"
     detalhe_operacional = f"Pedido em separação técnica. Responsável pela ação: {responsavel if responsavel else 'Não informado'}."
 
-    if nf and nf != "None" and nf != "":
-        etapa_atingida = 2
-        status_atual = "🟡 Faturado"
-        detalhe_operacional = f"Nota Fiscal {nf} emitida. Aguardando agendamento ou contato do transportador."
+    if cancelado:
+        status_atual = "❌ Pedido Cancelado"
+        detalhe_operacional = "Esta Nota Fiscal consta como cancelada no sistema."
+    else:
+        # Etapa 2: Faturado / Embalagem (Cliente e NF preenchidos)
+        if nf and nf != "None" and nf != "":
+            etapa_atingida = 2
+            status_atual = "🟡 Embalagem / Faturado"
+            detalhe_operacional = f"Nota Fiscal {nf} emitida e cliente preenchido. Aguardando solicitação de coleta."
 
-    # Se há Coleta registrada OU Data Solicitação preenchida, a coleta já foi solicitada (Avança para a etapa 3 concluída / etapa 4 em andamento)
-    if (coleta and coleta != "None" and coleta != "") or (data_solic and data_solic != "None" and data_solic != ""):
-        etapa_atingida = 3
-        status_atual = "🔵 Coleta Solicitada"
-        detalhe_operacional = f"Solicitação realizada sob o registro/contato: '{coleta if coleta else data_solic}'."
+        # Etapa 3: Coleta Solicitada (Colunas G e H preenchidas)
+        if (coleta and coleta != "None" and coleta != "") and (data_solic and data_solic != "None" and data_solic != ""):
+            etapa_atingida = 3
+            status_atual = "🔵 Coleta Solicitada"
+            detalhe_operacional = f"Coleta solicitada em {data_solic} sob o registro/contato: '{coleta}'."
 
-    # Se a Data da Coleta (coluna I) estiver preenchida, a coleta foi efetivada (Etapa 4 concluída)
-    if data_col and data_col != "None" and data_col != "":
-        etapa_atingida = 4
-        status_atual = "🟢 Coleta Efetivada"
-        detalhe_operacional = f"Material coletado e retirado da expedição física em: {data_col}."
-    elif (coleta and coleta != "None" and coleta != "") or (data_solic and data_solic != "None" and data_solic != ""):
-        # Se foi solicitada mas ainda não tem data de coleta, a próxima etapa (Coleta Efetivada) fica em andamento (etapa 4)
-        etapa_atingida = 4
-        status_atual = "🔵 Coleta Solicitada — Aguardando Efetivação"
-        detalhe_operacional = f"Coleta solicitada. Aguardando a efetivação (preenchimento da data de coleta)."
+        # Etapa 4: Coleta Efetivada (Coluna I DATA Col. preenchida)
+        if data_col and data_col != "None" and data_col != "":
+            etapa_atingida = 4
+            status_atual = "🟢 Coleta Efetivada"
+            detalhe_operacional = f"Material coletado e efetivado em: {data_col}."
+        elif (coleta and coleta != "None" and coleta != "") and (data_solic and data_solic != "None" and data_solic != ""):
+            # Se a coleta foi solicitada mas ainda não foi efetivada, a fase 4 fica em andamento
+            etapa_atingida = 4
+            status_atual = "🔵 Coleta Solicitada — Aguardando Efetivação"
+            detalhe_operacional = f"Coleta solicitada. Aguardando a efetivação (preenchimento da data de coleta)."
 
     return {
         "etapa_atingida": etapa_atingida,
         "status_atual": status_atual,
         "detalhe": detalhe_operacional,
+        "cancelado": cancelado,
         "detalhes_card": {
-            "Cliente": cliente,
+            "Cliente": cliente if cliente else "—",
             "N.F.": nf if nf else "—",
             "Número de Pedido": num_pedido if num_pedido else "—",
             "Incoterm": incoterm if incoterm else "Não informado",
             "Operação": operacao if operacao else "Não informada",
             "Transportador": transportador if transportador_valido else "Aguardando definição",
             "Coleta/Rastreio": coleta if coleta else "Não solicitado",
-            "Data Contato": data_solic if data_solic else "Não realizado",
+            "Data Contato": data_solic if pd.notna(data_solic) and str(data_solic) != "" else "Não realizado",
             "Observações": observacoes if observacoes else "Nenhuma observação registrada para esta nota."
         }
     }
