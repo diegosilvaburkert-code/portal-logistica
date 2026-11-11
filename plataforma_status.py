@@ -171,23 +171,6 @@ st.markdown(f"""
         [data-testid="stWidgetLabel"] {{ text-align: center !important; display: block !important; width: 100% !important; }}
         [data-testid="stTextInput"] div[data-baseweb="input"] {{ max-width: 560px !important; margin: 0 auto !important; }}
         [data-testid="stTextInput"] input {{ text-align: center !important; }}
-
-        @keyframes pulse-alert {{
-            0% {{ box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4); }}
-            70% {{ box-shadow: 0 0 0 12px rgba(229, 57, 53, 0); }}
-            100% {{ box-shadow: 0 0 0 0 rgba(229, 57, 53, 0); }}
-        }}
-        .fup-urgent-banner {{
-            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
-            border: 2px solid #e53935;
-            border-radius: 16px;
-            padding: 16px 24px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            animation: pulse-alert 2s infinite;
-        }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -238,6 +221,7 @@ def _norm(t):
     return re.sub(r"\s+", " ", t).strip()
 
 
+
 def df_demonstracao(val_demo, val_ctrl):
     if not val_demo or len(val_demo) < 2:
         return pd.DataFrame()
@@ -280,34 +264,43 @@ def df_demonstracao(val_demo, val_ctrl):
     
     df = df[(df["cliente"] != "") | (df["nf"] != "")].copy()
     
+    hoje = pd.Timestamp.today().normalize()
     df["d_saida"] = para_data(df["data_saida"])
     df["d_prev"] = para_data(df["prev_retorno"])
     df["d_retorno"] = para_data(df["retorno_data"])
     
+    # Verificação estrita de finalização: 
+    # Se Nota de Retorno ou Data de Retorno estiver preenchida, ou se Status Prazo for Finalizado.
+    df["finalizado"] = (
+        (df["status_prazo"].str.lower() == "finalizado") | 
+        (df["d_retorno"].notna()) | 
+        (df["nota_retorno"].str.strip() != "")
+    )
+    
     def calcula_status_fup(r):
-        st_prazo = str(r["status_prazo"]).strip().lower()
-        if "finalizado" in st_prazo:
+        if r["finalizado"]:
             return "🟢 Finalizado"
-        elif "retorno urgente" in st_prazo or "atraso" in st_prazo or "atrasou" in st_prazo:
+        
+        if pd.isna(r["d_saida"]):
+            return "⚪ Sem Data Saída"
+            
+        dias_corridos = (hoje - r["d_saida"].normalize()).days
+        
+        # Regra de Prazos de Demonstração:
+        # - Máximo 60 dias
+        # - 30 dias: 1º FUP
+        # - 45 dias: 2º FUP
+        # - > 60 dias: Atrasado (Retorno Urgente)
+        if dias_corridos > 60:
             return "🔴 Retorno Urgente"
+        elif dias_corridos >= 45:
+            return "🟡 2º FUP (45 dias)"
+        elif dias_corridos >= 30:
+            return "🟡 1º FUP (30 dias)"
         else:
             return "🔵 No Prazo"
             
     df["status_fup"] = df.apply(calcula_status_fup, axis=1)
-    df["finalizado"] = df["status_fup"] == "🟢 Finalizado"
-    
-    def avalia_cliente(r):
-        if pd.notna(r["d_retorno"]) and pd.notna(r["d_prev"]):
-            dias_dif = (r["d_retorno"] - r["d_prev"]).days
-            if dias_dif <= 0:
-                return "🟢 Positivo (No Prazo/Adiantado)"
-            else:
-                return "🔴 Negativo (Devolução Atrasada)"
-        elif not r["finalizado"] and pd.notna(r["d_prev"]) and pd.Timestamp.today().normalize() > r["d_prev"]:
-            return "🔴 Negativo (Vencido em Aberto)"
-        return "⚪ Neutro / Em Andamento"
-
-    df["avaliacao_cliente"] = df.apply(avalia_cliente, axis=1)
     return df
 
 
@@ -345,7 +338,9 @@ def df_conserto(valores):
     p = df["Pendência"].str.lower()
     sem_pend = (p == "") | p.str.match(r"^(finalizado|n[aã]o h[aá] pend)")
     df["_pend"] = ~sem_pend
+    
     df["_lib"] = df["Liberado"].str.upper().isin(["TRUE", "VERDADEIRO", "SIM", "X", "1", "✓"])
+    
     return df
 
 
@@ -494,6 +489,7 @@ def html_timeline(passos, etapa=None):
 def html_timeline_pedido(num_etapa, cancelado=False):
     nomes = ["Em Separação", "Faturado", "Coleta Solicitada", "Coleta Efetivada"]
     n = len(nomes)
+    
     passos = []
     for i in range(1, n + 1):
         if cancelado:
@@ -501,13 +497,19 @@ def html_timeline_pedido(num_etapa, cancelado=False):
         elif i < num_etapa:
             passos.append("ok")
         elif i == num_etapa:
-            passos.append("ok" if num_etapa == n else "pendente")
+            if num_etapa == n:
+                passos.append("ok")
+            else:
+                passos.append("pendente")
         else:
             passos.append("pendente")
 
     segs = ""
     for k, p in enumerate(passos, start=1):
-        cor = "#e53935" if cancelado else (COR_TRECHO_CS["ok"] if k < num_etapa or (num_etapa == n and k <= n) else "")
+        if cancelado:
+            cor = "#e53935"
+        else:
+            cor = COR_TRECHO_CS["ok"] if k < num_etapa or (num_etapa == n and k <= n) else ""
         if not cor:
             continue
         ini = 0 if k == 1 else (k - 1.5) / n * 100
@@ -523,11 +525,18 @@ def html_timeline_pedido(num_etapa, cancelado=False):
     itens = ""
     for i, (nome, p) in enumerate(zip(nomes, passos), start=1):
         if cancelado:
-            cls, ic, tag = "cancelado", "✕", "Cancelado"
+            cls = "cancelado"
+            ic = "✕"
+            tag = "Cancelado"
         else:
-            is_ok, is_cur = p == "ok", (i == num_etapa and num_etapa < n)
-            cls, ic, tag = ("ok" if is_ok else ("cur" if is_cur else "")), ("✓" if is_ok else ""), ("Em andamento" if is_cur else ("Concluído" if is_ok else ""))
+            is_ok = p == "ok"
+            is_cur = (i == num_etapa and num_etapa < n)
+            cls = "ok" if is_ok else ("cur" if is_cur else "")
+            ic = "✓" if is_ok else ""
+            tag = "Em andamento" if is_cur else ("Concluído" if is_ok else "")
+        
         itens += f'<div class="tl-item {cls}"><div class="tl-c">{ic}</div><div class="tl-n">{nome}</div><div class="tl-t">{tag}</div></div>'
+        
     return f'<div class="tl-wrap">{segs}{itens}</div>'
 
 
@@ -559,12 +568,16 @@ def html_detalhes_conserto(r, info):
             f'<div class="cs-nome">{esc(r["Cliente"])}</div><div class="cs-chips">{chips}</div></div>'
             f'<div class="cs-card cs-note{" bad" if info["bloqueado"] else ""}"><div class="cs-k">Situação</div>'
             f'<div class="cs-nt">{esc(det)}</div>{aviso_html}</div></div>')
-    fluxo = f'<div class="cs-card"><div class="cs-k">Fluxo do processo</div>{html_timeline(info["passos"], info["etapa"])}</div>'
+
+    fluxo = (f'<div class="cs-card"><div class="cs-k">Fluxo do processo</div>'
+             f'{html_timeline(info["passos"], info["etapa"])}</div>')
 
     def linha(rot, valor, pill=""):
         v = str(valor).strip()
-        if not v or v in ("Ainda não coletada", "Não informada"):
-            return f'<div class="cs-row"><span>{rot}</span><b class="vz">{esc(v) if v else "—"}</b></div>'
+        if not v:
+            return f'<div class="cs-row"><span>{rot}</span><b class="vz">—</b></div>'
+        if v in ("Ainda não coletada", "Não informada"):
+            return f'<div class="cs-row"><span>{rot}</span><b class="vz">{esc(v)}</b></div>'
         corpo = f'<span class="cs-pill {pill}">{esc(v)}</span>' if pill else esc(v)
         return f'<div class="cs-row"><span>{rot}</span><b>{corpo}</b></div>'
 
@@ -586,7 +599,8 @@ def html_detalhes_conserto(r, info):
                linha("Coleta solicitada em", col.get("data_solic", "")),
                linha("Data da coleta", col.get("data_col") or "Ainda não coletada"),
                linha("Transportadora", transp or "Não informada")]))
-    return CSS_CS + hero + fluxo + f'<div class="cs-grid3">{sec}</div>'
+    h = CSS_CS + hero + fluxo + f'<div class="cs-grid3">{sec}</div>'
+    return "\n".join(l.strip() for l in h.splitlines() if l.strip())
 
 
 def html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend):
@@ -597,13 +611,18 @@ def html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend):
         chips += f'<span class="cs-chip">Frete <b>{esc(cards["Incoterm"])}</b></span>'
 
     det = info["detalhe"]
-    aviso_pend = f'<div class="cs-aviso">⚠️ Esta NF consta como PENDENTE de coleta há {int(r_pend["Dias pendente"])} dia(s) — Status: {esc(r_pend["Status"])}</div>' if r_pend is not None else ""
+    aviso_pend = ""
+    if r_pend is not None:
+        aviso_pend = f'<div class="cs-aviso">⚠️ Esta NF consta como PENDENTE de coleta há {int(r_pend["Dias pendente"])} dia(s) — Status: {esc(r_pend["Status"])}</div>'
+
     hero = (f'<div class="cs-hero"><div class="cs-card cs-id"><div class="cs-k">Cliente</div>'
             f'<div class="cs-nome">{esc(cards["Cliente"])}</div><div class="cs-chips">{chips}</div></div>'
             f'<div class="cs-card cs-note"><div class="cs-k">Situação Atual</div>'
             f'<div class="cs-nt">{esc(info["status_atual"])}</div>'
             f'<div style="font-size:14px;color:#5c6b73;margin-top:6px">{esc(det)}</div>{aviso_pend}</div></div>')
-    fluxo = f'<div class="cs-card"><div class="cs-k">Fluxo do Processo</div>{html_timeline_pedido(info["etapa_atingida"], info["cancelado"])}</div>'
+
+    fluxo = (f'<div class="cs-card"><div class="cs-k">Fluxo do Processo</div>'
+             f'{html_timeline_pedido(info["etapa_atingida"], info["cancelado"])}</div>')
 
     def linha(rot, valor, pill=""):
         v = str(valor).strip()
@@ -622,12 +641,14 @@ def html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend):
                linha("Modalidade de Frete", cards["Incoterm"])])
            + secao("Logística & Transporte", [
                linha("Transportador", cards["Transportador"]),
-               linha("Nº Coleta / Rastreio", cards["Coleta/Rastreio"]),
+               linha("Nº Coleta / Registro", cards["Coleta/Rastreio"]),
                linha("Data do Contato", cards["Data Contato"]),
                linha("Data da Coleta", data_col_pedido or "Ainda não coletada")])
            + secao("Observações Gerais", [
                linha("Observações", cards["Observações"])]))
-    return CSS_CS + hero + fluxo + f'<div class="cs-grid3">{sec}</div>'
+
+    h = CSS_CS + hero + fluxo + f'<div class="cs-grid3">{sec}</div>'
+    return "\n".join(l.strip() for l in h.splitlines() if l.strip())
 
 
 def df_controle(valores):
@@ -640,6 +661,7 @@ def df_controle(valores):
     df["Num Pedido"] = df["Num Pedido"].str.strip()
     df["Data Solic."] = para_data(df["Data Solic."])
     df["Data Col."] = para_data(df["Data Col."])
+    df["Lead time (dias)"] = (df["Data Col."].dt.normalize() - df["Data Solic."]).dt.days
     return df
 
 
@@ -647,58 +669,130 @@ def calcular_fluxo_status(linha):
     def pegar_valor(idx):
         return str(linha[idx]).strip() if len(linha) > idx else ""
 
-    responsavel, operacao, incoterm, cliente, nf, transportador, coleta, data_solic, data_col, observacoes, num_pedido = [pegar_valor(i) for i in range(11)]
+    responsavel = pegar_valor(0)
+    operacao = pegar_valor(1)
+    incoterm = pegar_valor(2)
+    cliente = pegar_valor(3)
+    nf = pegar_valor(4)
+    transportador = pegar_valor(5)
+    coleta = pegar_valor(6)
+    data_solic = pegar_valor(7)
+    data_col = pegar_valor(8)
+    observacoes = pegar_valor(9)
+    num_pedido = pegar_valor(10)
+
+    transportador_valido = transportador and transportador != "-"
     cancelado = "cancelada" in operacao.lower()
-    etapa_atingida, status_atual = 1, "🟠 Em Separação"
+
+    etapa_atingida = 1 
+    status_atual = "🟠 Em Separação"
     detalhe_operacional = f"Pedido em separação técnica. Responsável pela ação: {responsavel if responsavel else 'Não informado'}."
 
     if cancelado:
-        status_atual, detalhe_operacional = "❌ Pedido Cancelado", "Esta Nota Fiscal consta como cancelada no sistema."
+        status_atual = "❌ Pedido Cancelado"
+        detalhe_operacional = "Esta Nota Fiscal consta como cancelada no sistema."
     else:
-        if nf:
-            etapa_atingida, status_atual = 2, "🟡 Embalagem / Faturado"
+        # Etapa 2: Faturado / Embalagem (Cliente e NF preenchidos)
+        if nf and nf != "None" and nf != "":
+            etapa_atingida = 2
+            status_atual = "🟡 Embalagem / Faturado"
             detalhe_operacional = f"Nota Fiscal {nf} emitida e cliente preenchido. Aguardando solicitação de coleta."
-        if coleta and data_solic:
-            etapa_atingida, status_atual = 3, "🔵 Coleta Solicitada"
+
+        # Etapa 3: Coleta Solicitada (Colunas G e H preenchidas)
+        if (coleta and coleta != "None" and coleta != "") and (data_solic and data_solic != "None" and data_solic != ""):
+            etapa_atingida = 3
+            status_atual = "🔵 Coleta Solicitada"
             detalhe_operacional = f"Coleta solicitada em {data_solic} sob o registro/contato: '{coleta}'."
-        if data_col:
-            etapa_atingida, status_atual = 4, "🟢 Coleta Efetivada"
+
+        # Etapa 4: Coleta Efetivada (Coluna I DATA Col. preenchida)
+        if data_col and data_col != "None" and data_col != "":
+            etapa_atingida = 4
+            status_atual = "🟢 Coleta Efetivada"
             detalhe_operacional = f"Material coletado e efetivado em: {data_col}."
+        elif (coleta and coleta != "None" and coleta != "") and (data_solic and data_solic != "None" and data_solic != ""):
+            # Se a coleta foi solicitada mas ainda não foi efetivada, a fase 4 fica em andamento
+            etapa_atingida = 4
+            status_atual = "🔵 Coleta Solicitada — Aguardando Efetivação"
+            detalhe_operacional = f"Coleta solicitada. Aguardando a efetivação (preenchimento da data de coleta)."
 
     return {
-        "etapa_atingida": etapa_atingida, "status_atual": status_atual, "detalhe": detalhe_operacional, "cancelado": cancelado,
+        "etapa_atingida": etapa_atingida,
+        "status_atual": status_atual,
+        "detalhe": detalhe_operacional,
+        "cancelado": cancelado,
         "detalhes_card": {
-            "Cliente": cliente or "—", "N.F.": nf or "—", "Número de Pedido": num_pedido or "—",
-            "Incoterm": incoterm or "Não informado", "Operação": operacao or "Não informada",
-            "Transportador": transportador if transportador and transportador != "-" else "Aguardando definição",
-            "Coleta/Rastreio": coleta or "Não solicitado",
+            "Cliente": cliente if cliente else "—",
+            "N.F.": nf if nf else "—",
+            "Número de Pedido": num_pedido if num_pedido else "—",
+            "Incoterm": incoterm if incoterm else "Não informado",
+            "Operação": operacao if operacao else "Não informada",
+            "Transportador": transportador if transportador_valido else "Aguardando definição",
+            "Coleta/Rastreio": coleta if coleta else "Não solicitado",
             "Data Contato": data_solic if pd.notna(data_solic) and str(data_solic) != "" else "Não realizado",
-            "Observações": observacoes or "Nenhuma observação registrada para esta nota."
+            "Observações": observacoes if observacoes else "Nenhuma observação registrada para esta nota."
         }
     }
 
 
-# ================= TABELAS INTERATIVAS =================
+# ================= TABELA INTERATIVA ESTILO EXCEL (COM BARRA LATERAL) =================
 _CSS_TAB_PEND = """
 body{margin:0;background:transparent;font-family:"Source Sans Pro",Arial,sans-serif;color:#1f3a57}
 .table-container{background:#fff;border-radius:18px;box-shadow:0 4px 20px rgba(59,113,159,.08);overflow:hidden;border:1px solid #e2e8f0;margin-top:10px}
 .table-header-bar{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;background:#f8fafc;border-bottom:1px solid #e2e8f0}
-.filter-toggle-btn{background:#3b719f;color:#fff;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12.5px;font-weight:600}
+.filter-toggle-btn{background:#3b719f;color:#fff;border:none;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px;transition:all .2s}
 .filter-toggle-btn:hover{background:#2c5a82}
 .record-count{font-size:13px;color:#64748b;font-weight:600}
 .tb-wrapper{max-height:580px;overflow:auto}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
-th{position:sticky;top:0;background:#3b719f;color:#fff;padding:12px 10px;z-index:2;cursor:pointer;text-align:center;font-weight:700}
+th{position:sticky;top:0;background:#3b719f;color:#fff;padding:12px 10px;z-index:2;cursor:pointer;user-select:none;white-space:nowrap;text-align:center;font-weight:700}
+th:hover{background:#2c5a82}
+th i{font-style:normal;margin-left:4px;font-size:11px;opacity:0.8}
 .filter-row{display:none;background:#f1f5f9;border-bottom:2px solid #cbd5e1}
 .filter-row.active{display:table-row}
 .filter-row td{padding:8px 6px;text-align:center}
-.filter-row input,.filter-row select{width:100%;box-sizing:border-box;padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;background:#fff}
+.filter-row input,.filter-row select{width:100%;box-sizing:border-box;padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;background:#fff;color:#1e293b}
 td{padding:10px 12px;border-bottom:1px solid #e2e8f0;text-align:center;color:#334155;background:#ffffff}
 tr:nth-child(even) td{background:#fafcfd}
 tr:hover td{background:#f1f5f9}
-.status-pill{display:inline-block;padding:4px 10px;border-radius:6px;font-size:11.5px;font-weight:700;text-transform:uppercase;background:#eef3f8;color:#3b719f;border:1px solid #cbd5e1}
-.status-pill.urgente{background:#fee2e2;color:#991b1b;border-color:#fca5a5}
-.status-pill.ok{background:#dcfce7;color:#166534;border-color:#86efac}
+
+.status-pill{
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    white-space: nowrap;
+    background: #eef3f8;
+    color: #3b719f;
+    border: 1px solid #cbd5e1;
+}
+.status-pill.vendedor{
+    background: #f8fafc;
+    color: #475569;
+    border-color: #cbd5e1;
+}
+.status-pill.aguardando{
+    background: #e0f2fe;
+    color: #0369a1;
+    border-color: #bae6fd;
+}
+.status-pill.urgente{
+    background: #fee2e2;
+    color: #991b1b;
+    border-color: #fca5a5;
+}
+.status-pill.semana{
+    background: #fef3c7;
+    color: #92400e;
+    border-color: #fde68a;
+}
+.status-pill.ok{
+    background: #dcfce7;
+    color: #166534;
+    border-color: #86efac;
+}
 """
 
 _JS_TAB_PEND = """
@@ -709,11 +803,15 @@ const cnt=document.getElementById('cnt');
 const toggleBtn=document.getElementById('toggleFilters');
 const filterRow=document.getElementById('filterRow');
 let col=-1,dir=1, filtersVisible=false;
+
 toggleBtn.addEventListener('click', ()=>{
     filtersVisible = !filtersVisible;
     filterRow.classList.toggle('active', filtersVisible);
     toggleBtn.innerHTML = filtersVisible ? '🔍 Ocultar Filtros' : '🔍 Filtrar Tabela';
 });
+
+function marcar(){ths.forEach((h,i)=>h.querySelector('i').textContent=i===col?(dir>0?'▲':'▼'):'');}
+
 function filtrar(){
     let n=0;
     rows.forEach(r=>{
@@ -729,53 +827,177 @@ function filtrar(){
     });
     cnt.textContent=n+' de '+rows.length+' caso(s)';
 }
+
+function ordenar(i){
+    dir=(col===i)?-dir:1;col=i;const num=ths[i].dataset.t!=='t';
+    rows.sort((a,b)=>{
+        let x=a.cells[i].dataset.v,y=b.cells[i].dataset.v;
+        if(num){
+            x=parseFloat(x);y=parseFloat(y);
+            const nx=isNaN(x),ny=isNaN(y);
+            if(nx&&ny)return 0;if(nx)return 1;if(ny)return -1;
+            return (x-y)*dir;
+        }
+        return x.localeCompare(y,'pt-BR')*dir;
+    });
+    rows.forEach(r=>tb.appendChild(r));marcar();
+}
+
+ths.forEach((h,i)=>h.addEventListener('click',()=>ordenar(i)));
 fls.forEach(el=>{el.addEventListener('input',filtrar);el.addEventListener('change',filtrar);});
 document.getElementById('lp').addEventListener('click',()=>{fls.forEach(el=>el.value='');filtrar();});
-filtrar();
+col=__DIAS__;dir=-1;marcar();filtrar();
 """
 
 
 def html_tabela_pendentes(df):
-    cols = [("NF", "NF", "t"), ("Cliente", "Cliente", "t"), ("Frete", "Frete", "t"), ("Transporte", "Transporte", "t"),
-            ("Ordem de coleta", "Ordem de coleta", "t"), ("Data Solicitação", "Data Solicitação", "d"), ("Dias pendente", "Dias pendente", "n"), ("Status", "Status", "t")]
+    cols = [
+        ("NF", "NF", "t"),
+        ("Cliente", "Cliente", "t"),
+        ("Frete", "Frete", "t"),
+        ("Transporte", "Transporte", "t"),
+        ("Ordem de coleta", "Ordem de coleta", "t"),
+        ("Data Solicitação", "Data Solicitação", "d"),
+        ("Dias pendente", "Dias pendente", "n"),
+        ("Status", "Status", "t")
+    ]
     regs = df.to_dict("records")
-    th = "".join(f'<th data-col>{n}</th>' for n, _, _ in cols)
-    fl = "".join(f'<td><input data-f type="text" placeholder="Filtrar..."></td>' for _, _, _ in cols)
+
+    def texto(r, k):
+        v = r[k]
+        if v is None or (isinstance(v, float) and pd.isna(v)) or v == "":
+            return "-"
+        if k == "Data Solicitação" and pd.notna(v):
+            return pd.to_datetime(v).strftime("%d/%m/%Y")
+        if k == "Dias pendente":
+            return f"{int(v)}"
+        return str(v)
+
+    def chave(r, k, tipo):
+        if tipo == "n":
+            return "" if pd.isna(r[k]) else str(int(r[k]))
+        if tipo == "d":
+            d = para_data(r[k])
+            return "" if pd.isna(d) else str(d.toordinal())
+        return _norm(texto(r, k))
+
+    th = "".join(f'<th data-col data-t="{t}">{n}<i></i></th>' for n, _, t in cols)
+    
+    fl = ""
+    for n, k, t in cols:
+        vals = sorted({texto(r, k) for r in regs}, key=_norm)
+        if t == "t" and len(vals) <= 25:
+            ops = '<option value="">Todos</option>' + "".join(f'<option value="{esc(v.lower())}">{esc(v)}</option>' for v in vals)
+            fl += f'<td><select data-f>{ops}</select></td>'
+        else:
+            fl += '<td><input data-f type="text" placeholder="Filtrar..."></td>'
+            
     linhas = ""
     for r in regs:
         d = r["Dias pendente"]
-        borda = "#e53935" if (pd.notna(d) and d > 5) else ("#f5b301" if (pd.notna(d) and d > PRAZO_ALERTA) else "#cbd5e1")
-        tds = "".join(f'<td>{str(r[k])}</td>' for _, k, _ in cols)
-        linhas += f'<tr style="border-left: 5px solid {borda};">{tds}</tr>'
-    return f'<!DOCTYPE html><html><head><meta charset="utf-8"><style>{_CSS_TAB_PEND}</style></head><body><div class="table-container"><div class="table-header-bar"><button id="toggleFilters" class="filter-toggle-btn">🔍 Filtrar Tabela</button><span class="record-count" id="cnt"></span><button id="lp" style="background:#e2e8f0;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:#334155;">Limpar</button></div><div class="tb-wrapper"><table id="t"><thead><tr>{th}</tr><tr class="filter-row" id="filterRow">{fl}</tr></thead><tbody>{linhas}</tbody></table></div></div><script>{_JS_TAB_PEND}</script></body></html>'
-
-
-def html_tabela_demonstracao(df):
-    cols = [("N.F.", "nf", "t"), ("Cliente", "cliente", "t"), ("Solicitado Por", "solicitado_por", "t"), ("Data Saída", "d_saida", "d"),
-            ("Prev. Retorno", "d_prev", "d"), ("Status FUP", "status_fup", "t"), ("Retorno (Data)", "d_retorno", "d"), ("NF Retorno", "nota_retorno", "t"), ("Avaliação", "avaliacao_cliente", "t"), ("Observação", "observacao", "t")]
-    regs = df.to_dict("records")
-    th = "".join(f'<th data-col>{n}</th>' for n, _, _ in cols)
-    fl = "".join(f'<td><input data-f type="text" placeholder="Filtrar..."></td>' for _, _, _ in cols)
-    linhas = ""
-    for r in regs:
-        st_fup = r["status_fup"]
-        borda = "#e53935" if "Retorno Urgente" in st_fup else ("#2fae6e" if "Finalizado" in st_fup else "#cbd5e1")
+        borda_esquerda = "#e53935" if (pd.notna(d) and d > 5) else ("#f5b301" if (pd.notna(d) and d > PRAZO_ALERTA) else "#cbd5e1")
+        
         tds = ""
-        for _, k, _ in cols:
-            val = str(r[k]) if pd.notna(r[k]) else "-"
-            if k == "status_fup":
-                cls = "urgente" if "Retorno Urgente" in val else ("ok" if "Finalizado" in val else "")
-                tds += f'<td><span class="status-pill {cls}">{esc(val)}</span></td>'
-            elif k == "avaliacao_cliente":
-                cls = "urgente" if "Negativo" in val else ("ok" if "Positivo" in val else "")
-                tds += f'<td><span class="status-pill {cls}">{esc(val)}</span></td>'
+        for _, k, t in cols:
+            val_txt = texto(r, k)
+            val_chave = chave(r, k, t)
+            
+            if k == "Status":
+                st_lower = val_txt.lower()
+                extra_cls = "vendedor" if "vendedor" in st_lower else "aguardando"
+                conteudo = f'<span class="status-pill {extra_cls}">{esc(val_txt)}</span>'
+                tds += f'<td data-v="{esc(val_chave)}">{conteudo}</td>'
             else:
-                tds += f'<td>{esc(val)}</td>'
-        linhas += f'<tr style="border-left: 5px solid {borda};">{tds}</tr>'
-    return f'<!DOCTYPE html><html><head><meta charset="utf-8"><style>{_CSS_TAB_PEND}</style></head><body><div class="table-container"><div class="table-header-bar"><button id="toggleFilters" class="filter-toggle-btn">🔍 Filtrar Tabela</button><span class="record-count" id="cnt"></span><button id="lp" style="background:#e2e8f0;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:#334155;">Limpar</button></div><div class="tb-wrapper"><table id="t"><thead><tr>{th}</tr><tr class="filter-row" id="filterRow">{fl}</tr></thead><tbody>{linhas}</tbody></table></div></div><script>{_JS_TAB_PEND}</script></body></html>'
+                tds += f'<td data-v="{esc(val_chave)}">{esc(val_txt)}</td>'
+                
+        linhas += f'<tr style="border-left: 5px solid {borda_esquerda};">{tds}</tr>'
+        
+    js = _JS_TAB_PEND.replace("__DIAS__", str([c[1] for c in cols].index("Dias pendente")))
+    
+    return (f'<!DOCTYPE html><html><head><meta charset="utf-8"><style>{_CSS_TAB_PEND}</style></head><body>'
+            f'<div class="table-container">'
+            f'<div class="table-header-bar"><button id="toggleFilters" class="filter-toggle-btn">🔍 Filtrar Tabela</button>'
+            f'<span class="record-count" id="cnt"></span><button id="lp" style="background:#e2e8f0;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:#334155;font-weight:600">Limpar Filtros</button></div>'
+            f'<div class="tb-wrapper"><table id="t"><thead>'
+            f'<tr>{th}</tr>'
+            f'<tr class="filter-row" id="filterRow">{fl}</tr>'
+            f'</thead><tbody>{linhas}</tbody></table></div></div>'
+            f'<script>{js}</script></body></html>')
 
 
 ABAS_RESTRITAS = {"pendentes", "dashboard", "demonstracao"}
+
+def html_tabela_demonstracao(df):
+    cols = [
+        ("N.F.", "nf", "t"),
+        ("Cliente", "cliente", "t"),
+        ("Solicitado Por", "solicitado_por", "t"),
+        ("Data Saída", "d_saida", "d"),
+        ("Prev. Retorno", "d_prev", "d"),
+        ("Status FUP", "status_fup", "t"),
+        ("Retorno (Data)", "d_retorno", "d"),
+        ("NF Retorno", "nota_retorno", "t"),
+        ("Observação", "observacao", "t")
+    ]
+    regs = df.to_dict("records")
+
+    def texto(r, k):
+        v = r[k]
+        if v is None or (isinstance(v, float) and pd.isna(v)) or str(v).strip() == "":
+            return "-"
+        if k in ("d_saida", "d_prev", "d_retorno") and pd.notna(v):
+            return pd.to_datetime(v).strftime("%d/%m/%Y")
+        return str(v)
+
+    def chave(r, k, tipo):
+        if tipo == "d":
+            d = para_data(r[k])
+            return "" if pd.isna(d) else str(d.toordinal())
+        return _norm(texto(r, k))
+
+    th = "".join(f'<th data-col data-t="{t}">{n}<i></i></th>' for n, _, t in cols)
+    
+    fl = ""
+    for n, k, t in cols:
+        vals = sorted({texto(r, k) for r in regs}, key=_norm)
+        if t == "t" and len(vals) <= 25:
+            ops = '<option value="">Todos</option>' + "".join(f'<option value="{esc(v.lower())}">{esc(v)}</option>' for v in vals)
+            fl += f'<td><select data-f>{ops}</select></td>'
+        else:
+            fl += '<td><input data-f type="text" placeholder="Filtrar..."></td>'
+            
+    linhas = ""
+    for r in regs:
+        st_fup = r["status_fup"]
+        borda_esquerda = "#e53935" if "Retorno Urgente" in st_fup else ("#f5b301" if "Vence esta Semana" in st_fup else ("#2fae6e" if "Finalizado" in st_fup else "#cbd5e1"))
+        
+        tds = ""
+        for _, k, t in cols:
+            val_txt = texto(r, k)
+            val_chave = chave(r, k, t)
+            
+            if k == "status_fup":
+                extra_cls = "urgente" if "Retorno Urgente" in val_txt else ("semana" if "Vence esta Semana" in val_txt else ("ok" if "Finalizado" in val_txt else "aguardando"))
+                conteudo = f'<span class="status-pill {extra_cls}">{esc(val_txt)}</span>'
+                tds += f'<td data-v="{esc(val_chave)}">{conteudo}</td>'
+            else:
+                tds += f'<td data-v="{esc(val_chave)}">{esc(val_txt)}</td>'
+                
+        linhas += f'<tr style="border-left: 5px solid {borda_esquerda};">{tds}</tr>'
+        
+    js = _JS_TAB_PEND.replace("__DIAS__", str([c[1] for c in cols].index("d_prev")))
+    
+    return (f'<!DOCTYPE html><html><head><meta charset="utf-8"><style>{_CSS_TAB_PEND}</style></head><body>'
+            f'<div class="table-container">'
+            f'<div class="table-header-bar"><button id="toggleFilters" class="filter-toggle-btn">🔍 Filtrar Tabela</button>'
+            f'<span class="record-count" id="cnt"></span><button id="lp" style="background:#e2e8f0;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:#334155;font-weight:600">Limpar Filtros</button></div>'
+            f'<div class="tb-wrapper"><table id="t"><thead>'
+            f'<tr>{th}</tr>'
+            f'<tr class="filter-row" id="filterRow">{fl}</tr>'
+            f'</thead><tbody>{linhas}</tbody></table></div></div>'
+            f'<script>{js}</script></body></html>')
+
+
 
 def verifica_senha(informada, cfg):
     h = cfg.get("senha_hash")
@@ -797,13 +1019,14 @@ def abas_do_usuario(cfg):
     return {str(a).strip().lower() for a in abas} & ABAS_RESTRITAS
 
 
-# --- DADOS E SESSÃO ---
+# --- LEITURA DE DADOS E AUTENTICAÇÃO ---
 try:
     todos_dados = ler_valores(NOME_DA_ABA)
     linhas_pedidos = [l for l in todos_dados[1:] if any(l)]
     pend = df_pendentes(ler_valores(ABA_PENDENTES))
     try:
-        demo_df = df_demonstracao(ler_valores(ABA_DEMONSTRACAO), todos_dados)
+        val_demo = ler_valores(ABA_DEMONSTRACAO)
+        demo_df = df_demonstracao(val_demo, todos_dados)
     except Exception:
         demo_df = pd.DataFrame()
 except Exception as e:
@@ -819,22 +1042,44 @@ if logado and logado not in usuarios:
 cfg_user = usuarios[logado] if logado else {}
 permitidas = set(ABAS_RESTRITAS) if not AUTH_ATIVO else (abas_do_usuario(cfg_user) if logado else set())
 
-nomes_completos_todos = {"consulta": "🔎 Consulta Saída", "pendentes": "⏳ Pendentes de coleta", "demonstracao": "🔄 Demonstrações (FUP)", "conserto": "🔧 Conserto/Reparo", "dashboard": "📊 Dashboard"}
-icones_apenas_todos = {"consulta": "🔎", "pendentes": "⏳", "demonstracao": "🔄", "conserto": "🔧", "dashboard": "📊"}
+erro_login = st.session_state.get("erro_login_msg", "")
+if erro_login:
+    st.error(erro_login)
+    st.session_state["erro_login_msg"] = "" 
+
+nomes_completos_todos = {
+    "consulta": "🔎 Consulta Saída",
+    "pendentes": "⏳ Pendentes de coleta",
+    "demonstracao": "🔄 Demonstrações (FUP)",
+    "conserto": "🔧 Conserto/Reparo",
+    "dashboard": "📊 Dashboard"
+}
+icones_apenas_todos = {
+    "consulta": "🔎",
+    "pendentes": "⏳",
+    "demonstracao": "🔄",
+    "conserto": "🔧",
+    "dashboard": "📊"
+}
 
 chaves = ["consulta"]
-if "pendentes" in permitidas: chaves.append("pendentes")
-if "demonstracao" in permitidas: chaves.append("demonstracao")
+if "pendentes" in permitidas:
+    chaves.append("pendentes")
+if "demonstracao" in permitidas:
+    chaves.append("demonstracao")
 chaves.append("conserto")
-if "dashboard" in permitidas: chaves.append("dashboard")
+if "dashboard" in permitidas:
+    chaves.append("dashboard")
 
-if "pagina" not in st.session_state: st.session_state["pagina"] = "consulta"
+if "pagina" not in st.session_state:
+    st.session_state["pagina"] = "consulta"
 
-# ======================= SIDEBAR =======================
+# ======================= NAVEGAÇÃO LATERAL (SIDEBAR DINÂMICA) =======================
 with st.sidebar:
     if expandido:
         c_logo, c_btn = st.columns([4, 1])
-        with c_logo: st.markdown('<div class="sb-header" style="border:none;margin:0;padding:0;"><div class="sb-logo">📦<span>PIONEERS<br>OF FLOW</span></div></div>', unsafe_allow_html=True)
+        with c_logo:
+            st.markdown('<div class="sb-header" style="border:none;margin:0;padding:0;"><div class="sb-logo">📦<span>PIONEERS<br>OF FLOW</span></div></div>', unsafe_allow_html=True)
         with c_btn:
             if st.button("◀", key="toggle_sb", use_container_width=True):
                 st.session_state["sidebar_expanded"] = False
@@ -846,151 +1091,198 @@ with st.sidebar:
             st.rerun()
 
     st.markdown('<div style="border-bottom:1px solid rgba(255,255,255,.22);margin-bottom:16px;"></div>', unsafe_allow_html=True)
+
     for _k in chaves:
         _label = nomes_completos_todos[_k] if expandido else icones_apenas_todos[_k]
-        if st.button(_label, key=f"nav_{_k}", use_container_width=True, type="primary" if st.session_state["pagina"] == _k else "secondary"):
+        _ativo = st.session_state["pagina"] == _k
+        if st.button(_label, key=f"nav_{_k}", use_container_width=True, type="primary" if _ativo else "secondary"):
             st.session_state["pagina"] = _k
             st.rerun()
 
     st.markdown('<div style="border-bottom:1px solid rgba(255,255,255,.22);margin:16px 0;"></div>', unsafe_allow_html=True)
-    if st.button("🔄", use_container_width=True, help="Limpar cache"):
+
+    # 🔄 BOTÃO DE ATUALIZAÇÃO MANUAL
+    if st.button("🔄", use_container_width=True, help="Limpa o cache e busca os dados mais recentes do Google Sheets"):
         st.cache_data.clear()
         st.rerun()
 
+    st.markdown('<div style="margin-top: auto; padding-top: 20px;"></div>', unsafe_allow_html=True)
+
     if AUTH_ATIVO:
         if logado:
-            with st.popover(f"👤 {cfg_user.get('nome', logado)}" if expandido else "👤", use_container_width=True):
+            label_user = f"👤 {cfg_user.get('nome', logado)}" if expandido else "👤"
+            with st.popover(label_user, use_container_width=True):
                 st.write(f"Conectado como: **{cfg_user.get('nome', logado)}**")
                 if st.button("🚪 Sair", key="btn_logout_sb", use_container_width=True):
                     st.session_state.pop("usuario", None)
                     st.rerun()
         else:
-            with st.popover("🔐 Logar" if expandido else "🔐", use_container_width=True):
+            lbl_login = "🔐 Logar / Solicitar cadastro" if expandido else "🔐"
+            with st.popover(lbl_login, use_container_width=True):
+                st.markdown("### 🔐 Acesso Colaborador")
                 with st.form("form_login_sb"):
                     u_in = st.text_input("Usuário").strip().lower()
                     p_in = st.text_input("Senha", type="password")
                     entrou = st.form_submit_button("Entrar", use_container_width=True)
+                
+                st.markdown("---")
+                st.caption("Ainda não tem acesso?")
+                if st.button("📝 Solicitar Cadastro", use_container_width=True):
+                    st.info("Entre em contato com a equipe de TI/Logística para solicitar o seu usuário.")
+
                 if entrou:
-                    if u_in in usuarios and verifica_senha(p_in, usuarios[u_in]):
+                    if st.session_state.get("tentativas", 0) >= 5:
+                        st.session_state["erro_login_msg"] = "Muitas tentativas incorretas. Aguarde alguns minutos."
+                    elif u_in in usuarios and verifica_senha(p_in, usuarios[u_in]):
                         st.session_state["usuario"] = u_in
+                        st.session_state["tentativas"] = 0
                         st.rerun()
                     else:
-                        st.error("Dados inválidos.")
+                        st.session_state["tentativas"] = st.session_state.get("tentativas", 0) + 1
+                        time.sleep(1.0)
+                        st.session_state["erro_login_msg"] = "Usuário ou senha inválidos."
+                        st.rerun()
 
-    st.markdown(f'<div class="sidebar-status-container">{"🟢 Conectado" if logado else "🟢 Modo Convidado"}</div>', unsafe_allow_html=True)
+    texto_conexao = "🟢 Modo Convidado" if not logado else f"🟢 Conectado"
+    if not expandido:
+        texto_conexao = "🟢"
+    st.markdown(
+        f'<div class="sidebar-status-container">{texto_conexao}</div>',
+        unsafe_allow_html=True
+    )
 
 pagina = st.session_state["pagina"]
-if pagina not in chaves: pagina = "consulta"
+if pagina not in chaves:
+    pagina = "consulta"
 
+# ======================= CABEÇALHO DA PÁGINA =======================
 PAGINAS = {
     "consulta": ("Onde está o pedido.", "Portal Logístico de Rastreamento de Pedidos em Tempo Real."),
     "pendentes": ("Pendentes de coleta.", "Acompanhe e gerencie a lista de coletas pendentes."),
     "demonstracao": ("Controle de Demonstrações.", "Gestão contínua de prazos e follow-up de materiais em demonstração."),
     "conserto": ("Conserto / Reparo.", "Verifique o andamento de notas e peças em manutenção."),
-    "dashboard": ("Painel de Indicadores & Seções.", "Análise executiva completa de Vendas, Consertos, Demonstrações e Lead Times."),
+    "dashboard": ("Visão Geral.", "Métricas de lead time, volume faturado e gargalos de expedição."),
 }
 _tit, _sub = PAGINAS.get(pagina, ("Pioneers of Flow.", ""))
-st.markdown(f'<div class="header-banner"><div class="hb-kicker">PIONEERS OF FLOW</div><h1>{esc(_tit)}</h1><p>{esc(_sub)}</p></div>', unsafe_allow_html=True)
+st.markdown(f"""
+    <div class="header-banner">
+        <div class="hb-kicker">PIONEERS OF FLOW</div>
+        <h1>{esc(_tit)}</h1>
+        <p>{esc(_sub)}</p>
+    </div>
+""", unsafe_allow_html=True)
 
 
 # ================= 1. CONSULTA =================
 if pagina == "consulta":
-    pedido_encontrado, r_pend = None, None
+    pedido_encontrado = None
+    r_pend = None
     _, mid, _ = st.columns([1, 2, 1])
     with mid:
+        st.write("Insira o número da Nota Fiscal ou o Número de Pedido abaixo para verificar o fluxo do processo.")
         pesquisa = st.text_input("Digite o número da Nota Fiscal ou Pedido:", placeholder="Ex: 47219...", key="nf_consulta").strip()
+
         if pesquisa:
             for linha in list(linhas_pedidos):
-                if len(linha) > 4 and (pesquisa == str(linha[4]).strip() or (len(linha) > 10 and pesquisa == str(linha[10]).strip())):
-                    pedido_encontrado = linha
-                    break
+                if len(linha) > 4:
+                    nf_numero = str(linha[4]).strip()
+                    num_pedido = str(linha[10]).strip() if len(linha) > 10 else ""
+                    
+                    if pesquisa == nf_numero or (num_pedido and pesquisa == num_pedido):
+                        pedido_encontrado = linha
+                        break
+            
             if not pedido_encontrado:
-                st.markdown(f'<div style="background:#fff4e5;border:2px solid #f5a623;border-radius:12px;padding:24px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#b45309;">Nota/Pedido não encontrado</div><div style="font-size:15px;color:#5c6b73;margin-top:8px">Nenhum registro para: <b>{esc(pesquisa)}</b></div></div>', unsafe_allow_html=True)
+                titulo_aviso = "Nota fiscal não faturada" if len(pesquisa) > 6 else "Pedido não faturado"
+                st.markdown(
+                    f'<div style="background:#fff4e5;border:2px solid #f5a623;border-radius:12px;padding:24px 20px;text-align:center;'
+                    f'box-shadow:0 4px 12px rgba(245,166,35,.18);margin-top:10px"><div style="font-size:34px;line-height:1">⚠️</div>'
+                    f'<div style="font-size:22px;font-weight:800;color:#b45309;margin-top:8px">{titulo_aviso}</div>'
+                    f'<div style="font-size:15px;color:#5c6b73;margin-top:8px">Nenhum registro para: <b>{esc(pesquisa)}</b>. Confira o número digitado.</div></div>',
+                    unsafe_allow_html=True
+                )
+
             p = pend[pend["NF"] == pesquisa]
-            if not p.empty: r_pend = p.iloc[0]
+            if not p.empty:
+                r_pend = p.iloc[0]
+
     if pedido_encontrado is not None:
         info = calcular_fluxo_status(pedido_encontrado)
-        st.markdown(html_detalhes_pedido_layout(info["detalhes_card"], str(pedido_encontrado[8]).strip() if len(pedido_encontrado) > 8 else "", info, r_pend), unsafe_allow_html=True)
+        cards = info["detalhes_card"]
+        data_col_pedido = str(pedido_encontrado[8]).strip() if len(pedido_encontrado) > 8 else ""
+        st.markdown(html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend), unsafe_allow_html=True)
 
 # ================= 2. PENDENTES =================
-elif pagina == "pendentes":
+if pagina == "pendentes":
     with st.container():
-        st.caption(f"Clique no título de uma coluna para ordenar · amarelo > {PRAZO_ALERTA} dias · vermelho > 5 dias")
-        v = pend.copy().sort_values("Dias pendente", ascending=False)
+        st.caption(f"Clique no título de uma coluna para ordenar · clique no botão **Filtrar Tabela** acima da tabela para exibir os campos de filtro · "
+                   f"amarelo > {PRAZO_ALERTA} dias · vermelho > 5 dias desde a solicitação")
+        
+        v = pend.copy()
+        v = v.sort_values("Dias pendente", ascending=False)
+        
         components.html(html_tabela_pendentes(v), height=660, scrolling=False)
+        
         st.markdown("<br>", unsafe_allow_html=True)
-        _, cd_col, _ = st.columns([1, 4, 1])
-        with cd_col:
-            st.download_button("⬇️ Baixar Relatório em CSV", v.to_csv(index=False).encode("utf-8-sig"), "pendentes_coleta.csv", "text/csv", use_container_width=True)
+        cols_dl = st.columns([1, 4, 1])
+        with cols_dl[1]:
+            st.download_button("⬇️ Baixar Relatório em CSV", v[["NF", "Cliente", "Frete", "Transporte", "Ordem de coleta", "Data Solicitação", "Dias pendente", "Status"]].to_csv(index=False).encode("utf-8-sig"),
+                               "pendentes_coleta.csv", "text/csv", use_container_width=True)
 
-# ================= 3. DEMONSTRAÇÕES =================
-elif pagina == "demonstracao":
+
+# ================= 3. DEMONSTRAÇÕES (FUP) =================
+if pagina == "demonstracao":
     with st.container():
         if demo_df.empty:
-            st.warning("Sem dados na aba Demonstração.")
+            st.warning(f"Não foi possível ler os dados da aba '{ABA_DEMONSTRACAO}' ou a aba está vazia.")
         else:
             tot_abertos = len(demo_df[~demo_df["finalizado"]])
             tot_urgentes = len(demo_df[demo_df["status_fup"] == "🔴 Retorno Urgente"])
+            tot_semana = len(demo_df[demo_df["status_fup"] == "🟡 Vence esta Semana"])
             tot_fin = len(demo_df[demo_df["finalizado"]])
 
-            if tot_urgentes > 0:
-                st.markdown(f'<div class="fup-urgent-banner"><div style="display:flex;align-items:center;gap:16px;"><span style="font-size:36px;">🚨</span><div><div style="font-size:16px;font-weight:800;color:#c62828;text-transform:uppercase;">Atenção Necessária — Follow-up Urgente!</div><div style="font-size:13.5px;color:#b71c1c;margin-top:2px;">Existem <b>{tot_urgentes}</b> caso(s) com Retorno Urgente pendente.</div></div></div></div>', unsafe_allow_html=True)
-
             st.markdown(f"""
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;">
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;">
                 <div style="background:#fff;border-radius:16px;padding:16px;box-shadow:0 4px 12px rgba(59,113,159,.1);border-top:5px solid #3b719f;">
                     <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Em Aberto (Total)</div>
                     <div style="font-size:32px;font-weight:800;color:#2c5a82;margin-top:4px;">{tot_abertos}</div>
                 </div>
                 <div style="background:#fff;border-radius:16px;padding:16px;box-shadow:0 4px 12px rgba(59,113,159,.1);border-top:5px solid #e53935;">
-                    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">🚨 Retorno Urgente</div>
+                    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">🚨 Retorno Urgente (Atrasados)</div>
                     <div style="font-size:32px;font-weight:800;color:#e53935;margin-top:4px;">{tot_urgentes}</div>
+                </div>
+                <div style="background:#fff;border-radius:16px;padding:16px;box-shadow:0 4px 12px rgba(59,113,159,.1);border-top:5px solid #f5b301;">
+                    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">⚠️ Vence esta Semana</div>
+                    <div style="font-size:32px;font-weight:800;color:#b45309;margin-top:4px;">{tot_semana}</div>
                 </div>
                 <div style="background:#fff;border-radius:16px;padding:16px;box-shadow:0 4px 12px rgba(59,113,159,.1);border-top:5px solid #2fae6e;">
                     <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">🟢 Finalizados</div>
                     <div style="font-size:32px;font-weight:800;color:#1e8e5a;margin-top:4px;">{tot_fin}</div>
                 </div>
-            </div>""", unsafe_allow_html=True)
+            </div>
+            """, unsafe_allow_html=True)
 
-            c_t1, c_t2 = st.columns([2, 1])
-            with c_t1: inc_fin = st.toggle("Incluir demonstrações finalizadas", value=False)
-            with c_t2: apenas_urgentes = st.toggle("🚨 Filtrar apenas Retornos Urgentes", value=False)
+            inc_fin = st.toggle("Incluir demonstrações finalizadas", value=False)
+            df_exibir = demo_df if inc_fin else demo_df[~demo_df["finalizado"]]
 
-            df_ex = demo_df if inc_fin else demo_df[~demo_df["finalizado"]]
-            if apenas_urgentes: df_ex = df_ex[df_ex["status_fup"] == "🔴 Retorno Urgente"]
+            st.caption("Clique no título de uma coluna para ordenar · utilize o botão **Filtrar Tabela** para buscas avançadas · vermelho: Retorno Urgente · amarelo: Vence nos próximos 7 dias")
+            components.html(html_tabela_demonstracao(df_exibir), height=660, scrolling=False)
 
-            components.html(html_tabela_demonstracao(df_ex), height=660, scrolling=False)
             st.markdown("<br>", unsafe_allow_html=True)
-            _, cd_col2, _ = st.columns([1, 4, 1])
-            with cd_col2:
-                st.download_button("⬇️ Baixar Relatório CSV", df_ex.to_csv(index=False).encode("utf-8-sig"), "demonstracoes.csv", "text/csv", use_container_width=True)
+            cols_dl = st.columns([1, 4, 1])
+            with cols_dl[1]:
+                st.download_button("⬇️ Baixar Relatório de Demonstrações em CSV", df_exibir.to_csv(index=False).encode("utf-8-sig"),
+                                   "demonstracoes_fup.csv", "text/csv", use_container_width=True)
 
-# ================= 4. CONSERTO =================
-elif pagina == "conserto":
-    try:
-        rep = df_conserto(ler_valores(ABA_CONSERTO))
-    except Exception:
-        rep = pd.DataFrame()
-    r_sel = None
-    _, mid4, _ = st.columns([1, 2, 1])
-    with mid4:
-        q = st.text_input("Número da Nota Fiscal (conserto):", placeholder="Ex: 295889...", key="nf_conserto").strip()
-        if q:
-            base = rep["Nota cliente"].str.split("-").str[0]
-            achou = rep[(rep["Nota cliente"] == q) | (base == q) | (rep["NF retorno"] == q)]
-            if achou.empty:
-                st.markdown(f'<div style="background:#fff4e5;border:2px solid #f5a623;border-radius:12px;padding:26px;text-align:center;"><div style="font-size:22px;font-weight:800;color:#b45309;">Nota Fiscal NÃO recebida</div><div style="font-size:14px;color:#5c6b73;margin-top:6px">Pesquisado: <b>{esc(q)}</b></div></div>', unsafe_allow_html=True)
-            else:
-                r_sel = achou.iloc[0]
-    if r_sel is not None:
-        st.markdown(html_detalhes_conserto(r_sel, status_conserto(r_sel, mapa_coletas(todos_dados))), unsafe_allow_html=True)
-
-# ================= 5. DASHBOARD (COM SEÇÕES E FILTROS AMPLIADOS) =================
+# ================= 3. DASHBOARD =================
 _uid = count(1)
 MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 CSS_DASH = """<style>
 .pf-grid{display:grid;gap:16px;margin-bottom:16px}
 .pf-r1{grid-template-columns:repeat(4,1fr)}
+.pf-r2{grid-template-columns:270px 1fr}
+.pf-r3{grid-template-columns:1.2fr 1fr 1fr}
+@media(max-width:1000px){.pf-r1,.pf-r2,.pf-r3{grid-template-columns:1fr}}
 .pf-card{background:#fff;border-radius:20px;padding:18px 20px;box-shadow:0 3px 10px rgba(59,113,159,.10);text-align:left;overflow:hidden}
 .pf-t{font-size:12px;font-weight:700;letter-spacing:.5px;color:#5c6b83;text-transform:uppercase}
 .pf-s{font-size:12px;color:#8a97ab;margin-top:2px}
@@ -1001,6 +1293,12 @@ CSS_DASH = """<style>
 .pf-duo div{text-align:center}
 .pf-duo b{display:block;font-size:38px;line-height:1.1}
 .pf-duo span{font-size:11px;color:#e3edfb}
+.pf-don{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+.pf-don+.pf-don{margin-top:18px;padding-top:16px;border-top:1px solid #e1e9f5}
+.pf-big{display:flex;gap:18px;align-items:center}
+.pf-big .side{min-width:150px;text-align:left}
+.pf-big .side b{display:block;font-size:30px;color:#3b719f;line-height:1.1}
+.pf-big .side span{font-size:12px;color:#8a97ab;display:block;margin-bottom:14px}
 .pf-li{margin-top:14px}
 .pf-lr{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:600;color:#1f3a57}
 .pf-lr span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1009,39 +1307,109 @@ CSS_DASH = """<style>
 .pf-fi{height:6px;border-radius:6px;background:linear-gradient(90deg,#6d8fb6,#3b719f)}
 </style>"""
 
-def _fmt1(x): return f"{x:.1f}".replace(".", ",")
+
+def _nome_mes(p):
+    return f"{MESES[p.month - 1]}/{p.year}"
+
+
+def _fmt1(x):
+    return f"{x:.1f}".replace(".", ",")
+
+
 def _spark(vals, w=240, h=46):
     vals = [float(v) for v in vals]
     u = next(_uid)
-    if len(vals) < 2: return f'<svg viewBox="0 0 {w} {h}" width="100%" height="{h}"><line x1="2" y1="{h-6}" x2="{w-2}" y2="{h-6}" stroke="#dbe5f3" stroke-width="2"/></svg>'
+    if len(vals) < 2:
+        return (f'<svg viewBox="0 0 {w} {h}" width="100%" height="{h}"><line x1="2" y1="{h-6}" x2="{w-2}" '
+                f'y2="{h-6}" stroke="#dbe5f3" stroke-width="2" stroke-linecap="round"/></svg>')
     mn, mx = min(vals), max(vals)
     rng = (mx - mn) or 1
     pts = [(2 + i * (w - 4) / (len(vals) - 1), h - 8 - (v - mn) / rng * (h - 16)) for i, v in enumerate(vals)]
     d = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
-    return f'<svg viewBox="0 0 {w} {h}" width="100%" height="{h}" preserveAspectRatio="none"><defs><linearGradient id="sp{u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6d8fb6" stop-opacity=".25"/><stop offset="1" stop-color="#6d8fb6" stop-opacity="0"/></linearGradient></defs><polygon points="2,{h} {d} {w-2},{h}" fill="url(#sp{u})"/><polyline points="{d}" fill="none" stroke="#6d8fb6" stroke-width="2.2" stroke-linejoin="round"/></svg>'
+    return (f'<svg viewBox="0 0 {w} {h}" width="100%" height="{h}" preserveAspectRatio="none">'
+            f'<defs><linearGradient id="sp{u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6d8fb6" '
+            f'stop-opacity=".25"/><stop offset="1" stop-color="#6d8fb6" stop-opacity="0"/></linearGradient></defs>'
+            f'<polygon points="2,{h} {d} {w-2},{h}" fill="url(#sp{u})"/>'
+            f'<polyline points="{d}" fill="none" stroke="#6d8fb6" stroke-width="2.2" stroke-linejoin="round" '
+            f'stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>')
+
+
+def _donut(pct, legenda, c1="#6d8fb6", c2="#3b719f"):
+    pct = max(0.0, min(100.0, pct))
+    r = 42
+    circ = 2 * 3.14159265 * r
+    u = next(_uid)
+    return (f'<div class="pf-don"><svg viewBox="0 0 110 110" width="120" height="120">'
+            f'<defs><linearGradient id="dn{u}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{c1}"/>'
+            f'<stop offset="1" stop-color="{c2}"/></linearGradient></defs>'
+            f'<circle cx="55" cy="55" r="{r}" fill="none" stroke="#dbe5f3" stroke-width="9"/>'
+            f'<circle cx="55" cy="55" r="{r}" fill="none" stroke="url(#dn{u})" stroke-width="9" stroke-linecap="round" '
+            f'stroke-dasharray="{circ * pct / 100:.1f} {circ:.1f}" transform="rotate(-90 55 55)"/>'
+            f'<text x="55" y="62" text-anchor="middle" font-size="22" font-weight="700" fill="#3b719f">{pct:.0f}%</text>'
+            f'</svg><div class="pf-s">{legenda}</div></div>')
+
 
 def _linha(rot, vals, w=640, h=230):
-    n, pl, pr, pt, pb = len(vals), 20, 20, 26, 34
+    n = len(vals)
+    pl, pr, pt, pb = 20, 20, 26, 34
     mx = max(max(vals), 1)
     X = lambda i: pl + (w - pl - pr) * (i / (n - 1) if n > 1 else 0.5)
     Y = lambda v: pt + (h - pt - pb) * (1 - v / mx)
-    grade = "".join(f'<line x1="{pl}" y1="{pt + (h - pt - pb) * k / 3:.1f}" x2="{w - pr}" y2="{pt + (h - pt - pb) * k / 3:.1f}" stroke="#e1e9f5"/>' for k in range(4))
+    grade = "".join(f'<line x1="{pl}" y1="{pt + (h - pt - pb) * k / 3:.1f}" x2="{w - pr}" '
+                    f'y2="{pt + (h - pt - pb) * k / 3:.1f}" stroke="#e1e9f5"/>' for k in range(4))
     pts = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in enumerate(vals))
-    bolas = "".join(f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="5" fill="#fff" stroke="#6d8fb6" stroke-width="3"/><text x="{X(i):.1f}" y="{Y(v) - 11:.1f}" text-anchor="middle" font-size="11" font-weight="600" fill="#3b719f">{v}</text>' for i, v in enumerate(vals))
-    eixo = "".join(f'<text x="{X(i):.1f}" y="{h - 10}" text-anchor="middle" font-size="11" fill="#8a97ab">{r}</text>' for i, r in enumerate(rot))
-    return f'<svg viewBox="0 0 {w} {h}" width="100%">{grade}<polyline points="{pts}" fill="none" stroke="#6d8fb6" stroke-width="3" stroke-linejoin="round"/>{bolas}{eixo}</svg>'
+    bolas = "".join(
+        f'<circle cx="{X(i):.1f}" cy="{Y(v):.1f}" r="5" fill="#fff" stroke="#6d8fb6" stroke-width="3"/>'
+        f'<text x="{X(i):.1f}" y="{Y(v) - 11:.1f}" text-anchor="middle" font-size="11" font-weight="600" '
+        f'fill="#3b719f">{v}</text>' for i, v in enumerate(vals))
+    eixo = "".join(f'<text x="{X(i):.1f}" y="{h - 10}" text-anchor="middle" font-size="11" fill="#8a97ab">{r}</text>'
+                   for i, r in enumerate(rot))
+    return (f'<svg viewBox="0 0 {w} {h}" width="100%">{grade}<polyline points="{pts}" fill="none" stroke="#6d8fb6" '
+            f'stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>{bolas}{eixo}</svg>')
+
+
+def _barras(rot, vals, w=360, h=210):
+    n = len(vals)
+    mx = max(max(vals), 1)
+    slot = w / n
+    bw = min(34, slot * 0.55)
+    top, bot = 26, h - 34
+    u = next(_uid)
+    corpo = ""
+    for i, (r, v) in enumerate(zip(rot, vals)):
+        x = slot * i + (slot - bw) / 2
+        fh = (bot - top) * v / mx
+        corpo += (f'<rect x="{x:.1f}" y="{top}" width="{bw:.1f}" height="{bot - top}" rx="{bw / 2:.1f}" fill="#e7edf6"/>'
+                  + (f'<rect x="{x:.1f}" y="{bot - fh:.1f}" width="{bw:.1f}" height="{fh:.1f}" rx="{bw / 2:.1f}" '
+                     f'fill="url(#br{u})"/>' if v > 0 else "")
+                  + f'<text x="{x + bw / 2:.1f}" y="{top - 8}" text-anchor="middle" font-size="12" font-weight="700" '
+                    f'fill="#3b719f">{v}</text>'
+                  + f'<text x="{x + bw / 2:.1f}" y="{h - 12}" text-anchor="middle" font-size="11" fill="#8a97ab">{r}</text>')
+    return (f'<svg viewBox="0 0 {w} {h}" width="100%"><defs><linearGradient id="br{u}" x1="0" y1="0" x2="0" y2="1">'
+            f'<stop offset="0" stop-color="#6d8fb6"/><stop offset="1" stop-color="#3b719f"/></linearGradient></defs>'
+            f'{corpo}</svg>')
+
 
 def _lista(itens, fmt):
-    if not itens: return '<div class="pf-s" style="margin-top:14px">Sem dados.</div>'
+    if not itens:
+        return '<div class="pf-s" style="margin-top:14px">Sem dados para exibir.</div>'
     mx = max(v for _, v in itens) or 1
-    return "".join(f'<div class="pf-li"><div class="pf-lr"><span>{esc(str(n))}</span><b>{fmt(v)}</b></div><div class="pf-tr"><div class="pf-fi" style="width:{max(v / mx * 100, 4):.0f}%"></div></div></div>' for n, v in itens)
+    return "".join(
+        f'<div class="pf-li"><div class="pf-lr"><span>{esc(str(n))}</span><b>{fmt(v)}</b></div>'
+        f'<div class="pf-tr"><div class="pf-fi" style="width:{max(v / mx * 100, 4):.0f}%"></div></div></div>'
+        for n, v in itens)
+
 
 def sem_ignorados(df, col="Cliente"):
-    if df is None or df.empty: return df
-    return df[~df[col].map(_norm).apply(lambda n: any(i in n for i in CLIENTES_IGNORADOS))]
+    if df is None or df.empty:
+        return df
+    nomes = df[col].map(_norm)
+    return df[~nomes.apply(lambda n: any(i in n for i in CLIENTES_IGNORADOS))]
 
-def dados_conserto_dash(rep, coletas, hoje):
-    if rep is None or rep.empty: return pd.DataFrame(columns=["Cliente", "dias", "coletado"])
+
+def dados_conserto(rep, coletas, hoje):
+    if rep is None or rep.empty:
+        return pd.DataFrame(columns=["Cliente", "dias", "coletado", "coleta"])
     r2 = rep[(rep["NF retorno"] != "") & (rep["Emissão NF saída"] != "")].copy()
     r2["emissao"] = para_data(r2["Emissão NF saída"])
     r2["coleta"] = para_data(r2["NF retorno"].map(lambda n: coletas.get(n.strip(), {}).get("data_col", "")))
@@ -1051,6 +1419,88 @@ def dados_conserto_dash(rep, coletas, hoje):
     return r2[(r2["dias"] >= 0) & (r2["dias"] <= 365)]
 
 
+def dados_faturadas(valores, hoje):
+    ctrl = df_controle(valores)
+    fat = ctrl[(ctrl["NF"] != "") & (~ctrl["Operação"].str.lower().str.contains("cancel"))].copy()
+    fat = fat[(fat["Data Solic."] >= pd.Timestamp("2024-01-01")) & (fat["Data Solic."] <= hoje + pd.Timedelta(days=31))]
+    fat["mes"] = fat["Data Solic."].dt.to_period("M")
+    return fat
+
+
+def montar_dashboard(pend, r2, fat, sel, hoje):
+    total = len(pend)
+    atras = int(pend["Atrasado"].sum())
+    conc = r2[r2["coletado"]]
+
+    media = conc["dias"].mean() if len(conc) else None
+    serie = conc.groupby(conc["coleta"].dt.to_period("M"))["dias"].mean().tail(8).tolist()
+    k1 = (f'<div class="pf-card"><div class="pf-t">Liberação → Coleta</div>'
+          f'<div class="pf-v">{_fmt1(media) + " dias" if media is not None else "—"}</div>'
+          f'<div class="pf-s">Média de dias entre a emissão da NF de retorno e a coleta</div>{_spark(serie)}</div>')
+
+    if sel is not None:
+        mes = fat[fat["mes"] == sel]
+        ult = hoje.day if sel == hoje.to_period("M") else sel.days_in_month
+        diario = mes.groupby(mes["Data Solic."].dt.day).size().reindex(range(1, ult + 1), fill_value=0).tolist()
+        qtd = len(mes)
+        rot_mes = _nome_mes(sel)
+    else:
+        diario, qtd, rot_mes = [], 0, "—"
+    k2 = (f'<div class="pf-card"><div class="pf-t">Notas faturadas no mês</div><div class="pf-v">{qtd}</div>'
+          f'<div class="pf-s">{rot_mes} · por dia</div>{_spark(diario)}</div>')
+
+    fc = fat[~fat["Cliente"].isin(["", "-"])]
+    rank = fc.groupby("Cliente").size().sort_values(ascending=False).head(5)
+    if len(rank):
+        top_n, top_q = rank.index[0], int(rank.iloc[0])
+    else:
+        top_n, top_q = "—", 0
+    k3 = (f'<div class="pf-card"><div class="pf-t">Maior reincidência</div><div class="pf-v">{top_q}x</div>'
+          f'<div class="pf-s" style="font-weight:600;color:#1f3a57">{esc(top_n)}</div>'
+          f'<div class="pf-s">Vezes faturadas para o mesmo cliente</div></div>')
+
+    k4 = (f'<div class="pf-card pf-blue"><div class="pf-t">Pendentes de coleta</div>'
+          f'<div class="pf-duo"><div><b>{total}</b><span>Total</span></div>'
+          f'<div><b>{atras}</b><span>Atrasados (&gt; {PRAZO_ALERTA} dias)</span></div></div></div>')
+
+    pct_atr = atras / total * 100 if total else 0
+    pct_col = len(conc) / len(r2) * 100 if len(r2) else 0
+    donuts = (_donut(pct_atr, "Pendentes de coleta em atraso")
+              + _donut(pct_col, "NFs de retorno já coletadas", "#6d8fb6", "#3b719f"))
+
+    if sel is not None:
+        per = pd.period_range(end=sel, periods=12, freq="M")
+        cont = fat.groupby("mes").size().reindex(per, fill_value=0)
+        linha = _linha([f"{MESES[p.month - 1]}/{str(p.year)[2:]}" for p in per], cont.tolist())
+        media_m = cont.mean()
+    else:
+        linha, media_m = "", 0
+    grande = (f'<div class="pf-card"><div class="pf-t">Notas faturadas · últimos 12 meses</div>'
+              f'<div class="pf-big"><div style="flex:1;min-width:0">{linha}</div><div class="side">'
+              f'<span>Mês selecionado</span><b>{qtd}</b>'
+              f'<span style="margin-top:14px">Média mensal</span><b>{_fmt1(media_m)}</b></div></div></div>')
+
+    ordem = ["Hoje", "1-2 dias", "3-5 dias", "6-10 dias", "+10 dias"]
+    fx = pend["Faixa"].astype(str).value_counts().reindex(ordem, fill_value=0)
+    barras = (f'<div class="pf-card"><div class="pf-t">Idade dos pendentes</div>'
+              f'<div class="pf-s">Casos pendentes por faixa de prazo</div>{_barras(ordem, fx.tolist())}</div>')
+
+    afet = (r2.groupby("Cliente")["dias"].mean().sort_values(ascending=False).head(5))
+    afet_l = [(c, v) for c, v in afet.items() if c]
+    l1 = (f'<div class="pf-card"><div class="pf-t">Clientes mais afetados por prazos longos</div>'
+          f'<div class="pf-s">Média de dias da liberação até a coleta (inclui casos ainda aguardando, contados até hoje)</div>'
+          f'{_lista(afet_l, lambda v: f"{v:.0f} dias")}</div>')
+
+    l2 = (f'<div class="pf-card"><div class="pf-t">Maior reincidência de clientes</div>'
+          f'<div class="pf-s">Quantidade de vezes faturadas por cliente (histórico completo)</div>'
+          f'{_lista([(c, int(v)) for c, v in rank.items()], lambda v: f"{v}x")}</div>')
+
+    html_all = (CSS_DASH + f'<div class="pf-grid pf-r1">{k1}{k2}{k3}{k4}</div>'
+                f'<div class="pf-grid pf-r2"><div class="pf-card">{donuts}</div>{grande}</div>'
+                f'<div class="pf-grid pf-r3">{barras}{l1}{l2}</div>')
+    return "\n".join(l.strip() for l in html_all.splitlines() if l.strip())
+
+
 if pagina == "dashboard":
     with st.container():
         hoje = pd.Timestamp.today().normalize()
@@ -1058,120 +1508,60 @@ if pagina == "dashboard":
             rep_d = df_conserto(ler_valores(ABA_CONSERTO))
         except Exception:
             rep_d = None
-        r2 = sem_ignorados(dados_conserto_dash(rep_d, mapa_coletas(todos_dados), hoje))
-        fat_all = sem_ignorados(df_controle(todos_dados))
-        fat_all["mes"] = fat_all["Data Solic."].dt.to_period("M")
-        fat = fat_all[(fat_all["NF"] != "") & (~fat_all["Operação"].str.lower().str.contains("cancel"))].copy()
+            st.warning(f"Não consegui ler a aba '{ABA_CONSERTO}'; os indicadores de conserto ficam vazios.")
+        r2 = sem_ignorados(dados_conserto(rep_d, mapa_coletas(todos_dados), hoje))
+        fat = sem_ignorados(dados_faturadas(todos_dados, hoje))
         pend_d = sem_ignorados(pend)
 
-        st.markdown("### 🎛️ Seções de Análise e KPIs Executivos")
-        secao_analise = st.selectbox(
-            "Selecione a seção de KPIs que deseja analisar:",
-            [
-                "📊 Vendas & Faturamento (Filtro por Mês, Múltiplos Meses ou Ano)",
-                "🔧 Conserto & Reparo",
-                "🔄 Demonstrações & Avaliação de Clientes",
-                "⏳ Prazos Acima do Comum & Gargalos",
-                "🔍 Modo Tela Cheia (Análise Individual de KPI)"
-            ],
-            key="secao_dashboard_sel"
-        )
-        st.markdown("---")
+        meses = sorted(fat["mes"].dropna().unique(), reverse=True)
+        sel = None
+        if meses:
+            atual = hoje.to_period("M")
+            _, cs, _ = st.columns([2, 1, 2])
+            sel = cs.selectbox("Mês de referência (notas faturadas)", meses,
+                               index=meses.index(atual) if atual in meses else 0, format_func=_nome_mes)
+        st.markdown(montar_dashboard(pend_d, r2, fat, sel, hoje), unsafe_allow_html=True)
 
-        if "Vendas" in secao_analise:
-            st.markdown("#### 📊 Análise de Vendas e Faturamento")
-            tipo_filtro = st.radio("Filtro temporal de vendas:", ["Mês Específico", "Ano Inteiro / Múltiplos Meses"], horizontal=True)
-            
-            meses_disp = sorted(fat["mes"].dropna().unique(), reverse=True)
-            if tipo_filtro == "Mês Específico":
-                sel_m = st.selectbox("Selecione o Mês", meses_disp, index=0 if meses_disp else 0, format_func=lambda p: f"{MESES[p.month-1]}/{p.year}")
-                fat_f = fat[fat["mes"] == sel_m]
+# ================= 4. CONSERTO / REPARO =================
+if pagina == "conserto":
+    try:
+        rep = df_conserto(ler_valores(ABA_CONSERTO))
+    except Exception as e:
+        st.error(f"Não consegui ler a aba '{ABA_CONSERTO}'. Confira o nome da aba na planilha.")
+        st.caption(str(e))
+        st.stop()
+
+    r_sel = None
+    _, mid4, _ = st.columns([1, 2, 1])
+    with mid4:
+        st.write("Digite o número da Nota Fiscal do cliente para acompanhar o conserto/reparo.")
+        q = st.text_input("Número da Nota Fiscal (conserto):", placeholder="Ex: 295889-1 ou 295889...",
+                          key="nf_conserto").strip()
+
+        if q:
+            base = rep["Nota cliente"].str.split("-").str[0]
+            achou = rep[(rep["Nota cliente"] == q) | (base == q) | (rep["NF retorno"] == q)]
+            if achou.empty:
+                st.markdown(
+                    '<div style="background:#fff4e5;border:2px solid #f5a623;border-radius:12px;padding:26px 20px;'
+                    'text-align:center;box-shadow:0 4px 12px rgba(245,166,35,.18);margin-top:10px">'
+                    '<div style="font-size:38px;line-height:1">⚠️</div>'
+                    '<div style="font-size:24px;font-weight:800;color:#b45309;margin-top:8px">'
+                    'Nota Fiscal NÃO recebida em nossa Expedição</div>'
+                    '<div style="font-size:16px;color:#5c6b73;margin-top:8px">'
+                    'ou número incluído incorretamente</div>'
+                    f'<div style="font-size:13px;color:#8a97ab;margin-top:12px">Número pesquisado: <b>{esc(q)}</b></div>'
+                    '</div>', unsafe_allow_html=True)
             else:
-                anos_disp = sorted(list({str(p.year) for p in meses_disp}), reverse=True)
-                sel_ano = st.selectbox("Selecione o Ano", anos_disp)
-                fat_f = fat[fat["mes"].astype(str).str.startswith(sel_ano)]
+                if len(achou) > 1:
+                    opcoes = {f"{r['Nota cliente']} — {r['Cliente']}": i for i, r in achou.iterrows()}
+                    escolha = st.selectbox("Mais de um registro encontrado, escolha:", list(opcoes))
+                    r_sel = achou.loc[opcoes[escolha]]
+                else:
+                    r_sel = achou.iloc[0]
 
-            conc = r2[r2["coletado"]]
-            media_lib = conc["dias"].mean() if len(conc) else 0
-            qtd_fat = len(fat_f)
-            rank = fat_f[~fat_f["Cliente"].isin(["", "-"])].groupby("Cliente").size().sort_values(ascending=False)
-            top_n, top_q = (rank.index[0], int(rank.iloc[0])) if len(rank) else ("—", 0)
-
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                st.markdown(f'<div class="pf-card" style="border-top:5px solid #3b719f;"><div class="pf-t">Liberação → Coleta</div><div class="pf-v">{_fmt1(media_lib)} dias</div><div class="pf-s">Média do período</div></div>', unsafe_allow_html=True)
-            with c2:
-                st.markdown(f'<div class="pf-card" style="border-top:5px solid #3b719f;"><div class="pf-t">Notas Faturadas</div><div class="pf-v">{qtd_fat}</div><div class="pf-s">Total no filtro</div></div>', unsafe_allow_html=True)
-            with c3:
-                st.markdown(f'<div class="pf-card" style="border-top:5px solid #3b719f;"><div class="pf-t">Maior Reincidência</div><div class="pf-v">{top_q}x</div><div class="pf-s" style="font-weight:700;color:#2c5a82;">{esc(top_n)}</div></div>', unsafe_allow_html=True)
-            with c4:
-                st.markdown(f'<div class="pf-card pf-blue"><div class="pf-t">Pendentes de Coleta</div><div class="pf-duo"><div><b>{len(pend_d)}</b><span>Total</span></div><div><b>{int(pend_d["Atrasado"].sum())}</b><span>Atrasados</span></div></div></div>', unsafe_allow_html=True)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            per = pd.period_range(end=hoje.to_period("M"), periods=12, freq="M")
-            cont = fat.groupby("mes").size().reindex(per, fill_value=0)
-            st.markdown(f'<div class="pf-card"><div class="pf-t">Notas Faturadas · Últimos 12 Meses</div><div style="margin-top:14px;">{_linha([f"{MESES[p.month-1]}/{str(p.year)[2:]}" for p in per], cont.tolist())}</div></div>', unsafe_allow_html=True)
-
-        elif "Conserto" in secao_analise:
-            st.markdown("#### 🔧 Métricas de Conserto e Reparo")
-            total_cons = len(rep_d) if rep_d is not None and not rep_d.empty else 0
-            cons_coletados = len(r2[r2["coletado"]]) if not r2.empty else 0
-            media_cons = r2["dias"].mean() if not r2.empty else 0
-
-            c1, c2, c3 = st.columns(3)
-            with c1: st.markdown(f'<div class="pf-card" style="border-top:5px solid #6d8fb6;"><div class="pf-t">Total em Conserto</div><div class="pf-v">{total_cons}</div><div class="pf-s">Registrados na assistência</div></div>', unsafe_allow_html=True)
-            with c2: st.markdown(f'<div class="pf-card" style="border-top:5px solid #2fae6e;"><div class="pf-t">Consertos Concluídos</div><div class="pf-v">{cons_coletados}</div><div class="pf-s">Devolvidos com coleta efetuada</div></div>', unsafe_allow_html=True)
-            with c3: st.markdown(f'<div class="pf-card" style="border-top:5px solid #3b719f;"><div class="pf-t">Tempo Médio de Reparo</div><div class="pf-v">{_fmt1(media_cons)} dias</div><div class="pf-s">Emissão NF saída → Coleta</div></div>', unsafe_allow_html=True)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            afet = r2.groupby("Cliente")["dias"].mean().sort_values(ascending=False).head(5)
-            st.markdown(f'<div class="pf-card"><div class="pf-t">Clientes com Maior Tempo de Ciclo em Conserto</div><div class="pf-s">Média de dias até a coleta</div>{_lista([(c, v) for c, v in afet.items() if c], lambda v: f"{v:.0f} dias")}</div>', unsafe_allow_html=True)
-
-        elif "Demonstrações" in secao_analise:
-            st.markdown("#### 🔄 Demonstrações & Avaliação de Desempenho dos Clientes")
-            if demo_df.empty:
-                st.warning("Sem dados de demonstração.")
-            else:
-                tot_d, urg_d = len(demo_df), len(demo_df[demo_df["status_fup"] == "🔴 Retorno Urgente"])
-                pos_c = len(demo_df[demo_df["avaliacao_cliente"].str.contains("Positivo")])
-                neg_c = len(demo_df[demo_df["avaliacao_cliente"].str.contains("Negativo")])
-
-                c1, c2, c3, c4 = st.columns(4)
-                with c1: st.markdown(f'<div class="pf-card" style="border-top:5px solid #3b719f;"><div class="pf-t">Total Demonstrações</div><div class="pf-v">{tot_d}</div><div class="pf-s">Casos registrados</div></div>', unsafe_allow_html=True)
-                with c2: st.markdown(f'<div class="pf-card" style="border-top:5px solid #e53935;"><div class="pf-t">Retornos Urgentes</div><div class="pf-v">{urg_d}</div><div class="pf-s">Follow-up imediato</div></div>', unsafe_allow_html=True)
-                with c3: st.markdown(f'<div class="pf-card" style="border-top:5px solid #2fae6e;"><div class="pf-t">🟢 Clientes Positivos</div><div class="pf-v">{pos_c}</div><div class="pf-s">Devolução no prazo</div></div>', unsafe_allow_html=True)
-                with c4: st.markdown(f'<div class="pf-card" style="border-top:5px solid #e53935;"><div class="pf-t">🔴 Clientes Negativos</div><div class="pf-v">{neg_c}</div><div class="pf-s">Devolução em atraso</div></div>', unsafe_allow_html=True)
-
-                st.markdown("<br>", unsafe_allow_html=True)
-                resumo_cli = demo_df.groupby("cliente").agg(Total_Casos=("nf", "count"), Atrasados=("status_fup", lambda x: (x == "🔴 Retorno Urgente").sum())).reset_index()
-                resumo_cli["Avaliação Geral"] = resumo_cli["Atrasados"].apply(lambda x: "🟢 Excelente (Sem Atrasos)" if x == 0 else "🔴 Requer Atenção (Com Atrasos)")
-                st.dataframe(resumo_cli, use_container_width=True, hide_index=True)
-
-        elif "Prazos Acima" in secao_analise:
-            st.markdown("#### ⏳ Prazos Acima do Comum & Gargalos")
-            atrasados_p = pend_d[pend_d["Atrasado"]].copy()
-            st.markdown(f'<div class="pf-card" style="border-left: 6px solid #e53935; margin-bottom: 16px;"><div class="pf-t">Coletas com Atraso Crítico (> {PRAZO_ALERTA} dias)</div><div class="pf-v">{len(atrasados_p)} casos</div><div class="pf-s">Aguardando coleta na expedição</div></div>', unsafe_allow_html=True)
-            if not atrasados_p.empty:
-                st.dataframe(atrasados_p[["NF", "Cliente", "Frete", "Transporte", "Data Solicitação", "Dias pendente", "Status"]], use_container_width=True, hide_index=True)
-            else:
-                st.success("Nenhum caso com prazo acima do comum no momento!")
-
-        else:
-            st.markdown("#### 🔍 Modo Tela Cheia — Análise Individual de KPI")
-            kpi_esc = st.selectbox("Escolha o KPI para análise detalhada:", ["Média de Liberação até Coleta", "Volume de Notas Faturadas", "Cliente com Maior Reincidência", "Status de Pendentes de Coleta", "Taxa de Retorno Urgente (Demonstrações)"])
-            st.markdown("---")
-            if "Liberação" in kpi_esc:
-                st.markdown(f'<div class="pf-card" style="padding: 40px; text-align: center;"><div class="pf-t">Média de Liberação → Coleta</div><div class="pf-v" style="font-size: 64px; margin: 20px 0;">{_fmt1(r2["dias"].mean() if not r2.empty else 0)} dias</div><div class="pf-s">Média de dias entre a emissão da NF de retorno e a efetivação da coleta.</div></div>', unsafe_allow_html=True)
-            elif "Faturadas" in kpi_esc:
-                st.markdown(f'<div class="pf-card" style="padding: 40px; text-align: center;"><div class="pf-t">Volume Total Faturado</div><div class="pf-v" style="font-size: 64px; margin: 20px 0;">{len(fat)} notas</div><div class="pf-s">Total acumulado de notas faturadas no sistema.</div></div>', unsafe_allow_html=True)
-            elif "Reincidência" in kpi_esc:
-                rank = fat[~fat["Cliente"].isin(["", "-"])].groupby("Cliente").size().sort_values(ascending=False)
-                tn, tq = (rank.index[0], int(rank.iloc[0])) if len(rank) else ("—", 0)
-                st.markdown(f'<div class="pf-card" style="padding: 40px; text-align: center;"><div class="pf-t">Maior Reincidência</div><div class="pf-v" style="font-size: 64px; margin: 20px 0;">{tq}x</div><div class="pf-s" style="font-size: 18px; font-weight:700;">Cliente: {esc(tn)}</div></div>', unsafe_allow_html=True)
-            elif "Pendentes" in kpi_esc:
-                st.markdown(f'<div class="pf-card pf-blue" style="padding: 40px; text-align: center;"><div class="pf-t" style="color:#e3edfb">Pendentes de Coleta</div><div class="pf-v" style="font-size: 64px; margin: 20px 0; color:#fff">{len(pend_d)} itens</div><div class="pf-s" style="color:#e3edfb">Destes, {int(pend_d["Atrasado"].sum())} encontram-es com atraso superior a {PRAZO_ALERTA} dias.</div></div>', unsafe_allow_html=True)
-            else:
-                urg = len(demo_df[demo_df["status_fup"] == "🔴 Retorno Urgente"]) if not demo_df.empty else 0
-                st.markdown(f'<div class="pf-card" style="padding: 40px; text-align: center;"><div class="pf-t">Retornos Urgentes (Demonstração)</div><div class="pf-v" style="font-size: 64px; margin: 20px 0; color:#e53935">{urg} casos</div><div class="pf-s">Casos que exigem follow-up imediato na aba de demonstrações.</div></div>', unsafe_allow_html=True)
+    if r_sel is not None:
+        info = status_conserto(r_sel, mapa_coletas(todos_dados))
+        st.markdown(html_detalhes_conserto(r_sel, info), unsafe_allow_html=True)
 
 st.markdown("<br><hr><div style='text-align: center; color: #6b7a90; font-size: 13px;'>Pioneers of Flow · Desenvolvido por Diego Elvis</div>", unsafe_allow_html=True)
