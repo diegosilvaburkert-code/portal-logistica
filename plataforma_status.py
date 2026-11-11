@@ -171,6 +171,23 @@ st.markdown(f"""
         [data-testid="stWidgetLabel"] {{ text-align: center !important; display: block !important; width: 100% !important; }}
         [data-testid="stTextInput"] div[data-baseweb="input"] {{ max-width: 560px !important; margin: 0 auto !important; }}
         [data-testid="stTextInput"] input {{ text-align: center !important; }}
+
+        @keyframes pulse-alert {{
+            0% {{ box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4); }}
+            70% {{ box-shadow: 0 0 0 12px rgba(229, 57, 53, 0); }}
+            100% {{ box-shadow: 0 0 0 0 rgba(229, 57, 53, 0); }}
+        }}
+        .fup-urgent-banner {{
+            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+            border: 2px solid #e53935;
+            border-radius: 16px;
+            padding: 16px 24px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            animation: pulse-alert 2s infinite;
+        }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -267,7 +284,6 @@ def df_demonstracao(val_demo, val_ctrl):
     df["d_prev"] = para_data(df["prev_retorno"])
     df["d_retorno"] = para_data(df["retorno_data"])
     
-    # Lógica correta baseada estritamente na coluna Status Prazo (ou se o status indica finalizado)
     def calcula_status_fup(r):
         st_prazo = str(r["status_prazo"]).strip().lower()
         if "finalizado" in st_prazo:
@@ -1214,6 +1230,20 @@ if pagina == "demonstracao":
             tot_urgentes = len(demo_df[demo_df["status_fup"] == "🔴 Retorno Urgente"])
             tot_fin = len(demo_df[demo_df["finalizado"]])
 
+            # BANNER DE ALERTA DE RETORNO URGENTE COM DESTAQUE
+            if tot_urgentes > 0:
+                st.markdown(f"""
+                <div class="fup-urgent-banner">
+                    <div style="display:flex;align-items:center;gap:16px;">
+                        <span style="font-size:36px;">🚨</span>
+                        <div>
+                            <div style="font-size:16px;font-weight:800;color:#c62828;text-transform:uppercase;">Atenção Necessária — Follow-up Urgente!</div>
+                            <div style="font-size:13.5px;color:#b71c1c;margin-top:2px;">Existem <b>{tot_urgentes}</b> caso(s) de demonstração com Retorno Urgente pendente de resolução na planilha.</div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
             st.markdown(f"""
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;">
                 <div style="background:#fff;border-radius:16px;padding:16px;box-shadow:0 4px 12px rgba(59,113,159,.1);border-top:5px solid #3b719f;">
@@ -1231,8 +1261,15 @@ if pagina == "demonstracao":
             </div>
             """, unsafe_allow_html=True)
 
-            inc_fin = st.toggle("Incluir demonstrações finalizadas", value=False)
+            col_t1, col_t2 = st.columns([2, 1])
+            with col_t1:
+                inc_fin = st.toggle("Incluir demonstrações finalizadas", value=False)
+            with col_t2:
+                apenas_urgentes = st.toggle("🚨 Filtrar apenas Retornos Urgentes", value=False)
+
             df_exibir = demo_df if inc_fin else demo_df[~demo_df["finalizado"]]
+            if apenas_urgentes:
+                df_exibir = df_exibir[df_exibir["status_fup"] == "🔴 Retorno Urgente"]
 
             st.caption("Clique no título de uma coluna para ordenar · utilize o botão **Filtrar Tabela** para buscas avançadas")
             components.html(html_tabela_demonstracao(df_exibir), height=660, scrolling=False)
