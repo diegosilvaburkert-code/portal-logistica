@@ -179,7 +179,7 @@ def conectar_google_sheets():
     info_json = st.secrets["gspread_credentials"]["json_string"]
     dic_chaves = json.loads(info_json, strict=False)
     if "private_key" in dic_chaves:
-        dic_chaves["private_key"] = dic_chaves["private_key"].replace("\\\\n", "\n").replace("\\n", "\n")
+        dic_chaves["private_key"] = dic_chaves["private_key"].replace("\\n", "\n").replace("\n", "\n")
     cliente = gspread.service_account_from_dict(dic_chaves)
     return cliente
 
@@ -195,7 +195,7 @@ def para_data(s):
 
 
 def limpa_status(s):
-    s = re.sub(r"^[^\w\u00C0-\u00FF]+", "", str(s)).strip()
+    s = re.sub(r"^[^\wÀ-ÿ]+", "", str(s)).strip()
     return s or "Sem status"
 
 
@@ -402,7 +402,7 @@ def html_timeline(passos, etapa=None):
     return f'<div class="tl-wrap">{segs}{itens}</div>'
 
 
-def html_timeline_pedido(num_etapa, coleta_concluida=False, cancelado=False):
+def html_timeline_pedido(num_etapa, cancelado=False):
     nomes = ["Em Separação", "Faturado", "Coleta Solicitada", "Coleta Efetivada"]
     n = len(nomes)
     
@@ -413,7 +413,7 @@ def html_timeline_pedido(num_etapa, coleta_concluida=False, cancelado=False):
         elif i < num_etapa:
             passos.append("ok")
         elif i == num_etapa:
-            if i == n and coleta_concluida:
+            if num_etapa == n:
                 passos.append("ok")
             else:
                 passos.append("pendente")
@@ -425,9 +425,7 @@ def html_timeline_pedido(num_etapa, coleta_concluida=False, cancelado=False):
         if cancelado:
             cor = "#e53935"
         else:
-            # Pinta o trecho de verde se a etapa for menor que num_etapa, ou se chegou ao fim e coleta está concluída
-            concluido_ate_aqui = (k < num_etapa) or (k == num_etapa and num_etapa == n and coleta_concluida)
-            cor = COR_TRECHO_CS["ok"] if concluido_ate_aqui else ""
+            cor = COR_TRECHO_CS["ok"] if k < num_etapa or (num_etapa == n and k <= n) else ""
         if not cor:
             continue
         ini = 0 if k == 1 else (k - 1.5) / n * 100
@@ -437,7 +435,7 @@ def html_timeline_pedido(num_etapa, coleta_concluida=False, cancelado=False):
 
     if cancelado:
         segs = f'<div class="tl-seg" style="left:0%;width:100%;background:#e53935;border-radius:10px"></div>'
-    elif coleta_concluida:
+    elif num_etapa == n:
         segs += f'<div class="tl-seg" style="left:{(n - 0.5) / n * 100:.3f}%;width:{0.5 / n * 100:.3f}%;background:{COR_TRECHO_CS["ok"]};border-radius:0 10px 10px 0"></div>'
 
     itens = ""
@@ -448,7 +446,7 @@ def html_timeline_pedido(num_etapa, coleta_concluida=False, cancelado=False):
             tag = "Cancelado"
         else:
             is_ok = p == "ok"
-            is_cur = (i == num_etapa and not (i == n and coleta_concluida))
+            is_cur = (i == num_etapa and num_etapa < n)
             cls = "ok" if is_ok else ("cur" if is_cur else "")
             ic = "✓" if is_ok else ""
             tag = "Em andamento" if is_cur else ("Concluído" if is_ok else "")
@@ -518,7 +516,8 @@ def html_detalhes_conserto(r, info):
                linha("Data da coleta", col.get("data_col") or "Ainda não coletada"),
                linha("Transportadora", transp or "Não informada")]))
     h = CSS_CS + hero + fluxo + f'<div class="cs-grid3">{sec}</div>'
-    return "\n".join(l.strip() for l in h.splitlines() if l.strip())
+    return "
+".join(l.strip() for l in h.splitlines() if l.strip())
 
 
 def html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend):
@@ -540,7 +539,7 @@ def html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend):
             f'<div style="font-size:14px;color:#5c6b73;margin-top:6px">{esc(det)}</div>{aviso_pend}</div></div>')
 
     fluxo = (f'<div class="cs-card"><div class="cs-k">Fluxo do Processo</div>'
-             f'{html_timeline_pedido(info["etapa_atingida"], info["coleta_concluida"], info["cancelado"])}</div>')
+             f'{html_timeline_pedido(info["etapa_atingida"], info["cancelado"])}</div>')
 
     def linha(rot, valor, pill=""):
         v = str(valor).strip()
@@ -566,7 +565,8 @@ def html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend):
                linha("Observações", cards["Observações"])]))
 
     h = CSS_CS + hero + fluxo + f'<div class="cs-grid3">{sec}</div>'
-    return "\n".join(l.strip() for l in h.splitlines() if l.strip())
+    return "
+".join(l.strip() for l in h.splitlines() if l.strip())
 
 
 def df_controle(valores):
@@ -605,23 +605,16 @@ def calcular_fluxo_status(linha):
     etapa_atingida = 1 
     status_atual = "🟠 Em Separação"
     detalhe_operacional = f"Pedido em separação técnica. Responsável pela ação: {responsavel if responsavel else 'Não informado'}."
-    coleta_concluida = False
 
     if cancelado:
         status_atual = "❌ Pedido Cancelado"
         detalhe_operacional = "Esta Nota Fiscal consta como cancelada no sistema."
     else:
-        # Etapa 1: Em Separação (NF preenchida)
-        if nf and nf != "None" and nf != "":
-            etapa_atingida = 1
-            status_atual = "🟠 Em Separação"
-            detalhe_operacional = f"Nota Fiscal {nf} em processo de separação."
-
         # Etapa 2: Faturado / Embalagem (Cliente e NF preenchidos)
-        if cliente and cliente != "None" and cliente != "" and nf and nf != "None" and nf != "":
+        if nf and nf != "None" and nf != "":
             etapa_atingida = 2
             status_atual = "🟡 Embalagem / Faturado"
-            detalhe_operacional = f"Nota Fiscal {nf} emitida e cliente preenchido. Pedido faturado."
+            detalhe_operacional = f"Nota Fiscal {nf} emitida e cliente preenchido. Aguardando solicitação de coleta."
 
         # Etapa 3: Coleta Solicitada (Colunas G e H preenchidas)
         if (coleta and coleta != "None" and coleta != "") and (data_solic and data_solic != "None" and data_solic != ""):
@@ -632,11 +625,10 @@ def calcular_fluxo_status(linha):
         # Etapa 4: Coleta Efetivada (Coluna I DATA Col. preenchida)
         if data_col and data_col != "None" and data_col != "":
             etapa_atingida = 4
-            coleta_concluida = True
             status_atual = "🟢 Coleta Efetivada"
             detalhe_operacional = f"Material coletado e efetivado em: {data_col}."
         elif (coleta and coleta != "None" and coleta != "") and (data_solic and data_solic != "None" and data_solic != ""):
-            # Se a coleta foi solicitada mas a data da coleta (I) está vazia, a etapa ativa é 4 (em andamento)
+            # Se a coleta foi solicitada mas ainda não foi efetivada, a fase 4 fica em andamento
             etapa_atingida = 4
             status_atual = "🔵 Coleta Solicitada — Aguardando Efetivação"
             detalhe_operacional = f"Coleta solicitada. Aguardando a efetivação (preenchimento da data de coleta)."
@@ -646,7 +638,6 @@ def calcular_fluxo_status(linha):
         "status_atual": status_atual,
         "detalhe": detalhe_operacional,
         "cancelado": cancelado,
-        "coleta_concluida": coleta_concluida,
         "detalhes_card": {
             "Cliente": cliente if cliente else "—",
             "N.F.": nf if nf else "—",
@@ -878,37 +869,10 @@ if logado and logado not in usuarios:
 cfg_user = usuarios[logado] if logado else {}
 permitidas = set(ABAS_RESTRITAS) if not AUTH_ATIVO else (abas_do_usuario(cfg_user) if logado else set())
 
-topo1, topo2, topo3 = st.columns([5, 2, 1])
-erro_login = ""
-if AUTH_ATIVO:
-    with topo2:
-        if logado:
-            st.caption(f"👤 {cfg_user.get('nome', logado)}")
-            if st.button("Sair"):
-                st.session_state.pop("usuario", None)
-                st.rerun()
-        else:
-            with st.popover("🔐 Entrar (colaboradores)"):
-                with st.form("form_login"):
-                    u_in = st.text_input("Usuário").strip().lower()
-                    p_in = st.text_input("Senha", type="password")
-                    entrou = st.form_submit_button("Entrar")
-            if entrou:
-                if st.session_state.get("tentativas", 0) >= 5:
-                    erro_login = "Muitas tentativas incorretas. Aguarde e recarregue a página."
-                elif u_in in usuarios and verifica_senha(p_in, usuarios[u_in]):
-                    st.session_state["usuario"] = u_in
-                    st.session_state["tentativas"] = 0
-                    st.rerun()
-                else:
-                    st.session_state["tentativas"] = st.session_state.get("tentativas", 0) + 1
-                    time.sleep(1.5)
-                    erro_login = "Usuário ou senha inválidos."
+erro_login = st.session_state.get("erro_login_msg", "")
 if erro_login:
     st.error(erro_login)
-if AUTH_ATIVO and not logado:
-    st.info("🔒 Acesso externo: as abas **Pendentes de coleta** e **Dashboard** são exclusivas para colaboradores. "
-            "Se você é da empresa, clique em **Entrar** com seu usuário e senha.")
+    st.session_state["erro_login_msg"] = "" 
 
 nomes_completos_todos = {
     "consulta": "🔎 Consulta Saída",
@@ -965,7 +929,46 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-    texto_conexao = "🟢 Conexão Estabelecida" if expandido else "🟢"
+    st.markdown('<div style="margin-top: auto; padding-top: 20px;"></div>', unsafe_allow_html=True)
+
+    if AUTH_ATIVO:
+        if logado:
+            label_user = f"👤 {cfg_user.get('nome', logado)}" if expandido else "👤"
+            with st.popover(label_user, use_container_width=True):
+                st.write(f"Conectado como: **{cfg_user.get('nome', logado)}**")
+                if st.button("🚪 Sair", key="btn_logout_sb", use_container_width=True):
+                    st.session_state.pop("usuario", None)
+                    st.rerun()
+        else:
+            lbl_login = "🔐 Logar / Solicitar cadastro" if expandido else "🔐"
+            with st.popover(lbl_login, use_container_width=True):
+                st.markdown("### 🔐 Acesso Colaborador")
+                with st.form("form_login_sb"):
+                    u_in = st.text_input("Usuário").strip().lower()
+                    p_in = st.text_input("Senha", type="password")
+                    entrou = st.form_submit_button("Entrar", use_container_width=True)
+                
+                st.markdown("---")
+                st.caption("Ainda não tem acesso?")
+                if st.button("📝 Solicitar Cadastro", use_container_width=True):
+                    st.info("Entre em contato com a equipe de TI/Logística para solicitar o seu usuário.")
+
+                if entrou:
+                    if st.session_state.get("tentativas", 0) >= 5:
+                        st.session_state["erro_login_msg"] = "Muitas tentativas incorretas. Aguarde alguns minutos."
+                    elif u_in in usuarios and verifica_senha(p_in, usuarios[u_in]):
+                        st.session_state["usuario"] = u_in
+                        st.session_state["tentativas"] = 0
+                        st.rerun()
+                    else:
+                        st.session_state["tentativas"] = st.session_state.get("tentativas", 0) + 1
+                        time.sleep(1.0)
+                        st.session_state["erro_login_msg"] = "Usuário ou senha inválidos."
+                        st.rerun()
+
+    texto_conexao = "🟢 Modo Convidado" if not logado else f"🟢 Conectado"
+    if not expandido:
+        texto_conexao = "🟢"
     st.markdown(
         f'<div class="sidebar-status-container">{texto_conexao}</div>',
         unsafe_allow_html=True
@@ -1272,7 +1275,8 @@ def montar_dashboard(pend, r2, fat, sel, hoje):
     html_all = (CSS_DASH + f'<div class="pf-grid pf-r1">{k1}{k2}{k3}{k4}</div>'
                 f'<div class="pf-grid pf-r2"><div class="pf-card">{donuts}</div>{grande}</div>'
                 f'<div class="pf-grid pf-r3">{barras}{l1}{l2}</div>')
-    return "\n".join(l.strip() for l in html_all.splitlines() if l.strip())
+    return "
+".join(l.strip() for l in html_all.splitlines() if l.strip())
 
 
 if pagina == "dashboard":
