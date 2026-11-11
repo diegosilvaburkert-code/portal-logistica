@@ -18,6 +18,7 @@ LINK_PLANILHA = "https://google.com/spreadsheets/d/1cYhrFo_JVrTqtaxHXqiKc_gOl-En
 NOME_DA_ABA = "controle"
 ABA_PENDENTES = "Pendentes (FUP)"
 ABA_CONSERTO = "Retorno Conserto"
+ABA_DEMONSTRACAO = "Demonstração"
 
 CLIENTES_IGNORADOS = ["burkert"]
 PRAZO_ALERTA = 3
@@ -218,6 +219,69 @@ def df_pendentes(valores):
 def _norm(t):
     t = unicodedata.normalize("NFKD", str(t)).encode("ascii", "ignore").decode().lower()
     return re.sub(r"\s+", " ", t).strip()
+
+
+
+def df_demonstracao(val_demo, val_ctrl):
+    ini, cab = 2, None
+    for i, l in enumerate(val_demo[:8]):
+        if any("business partner" in _norm(c) or "emitida para" in _norm(c) for c in l):
+            ini, cab = i + 1, [_norm(c) for c in l]
+            break
+
+    def achar(termos, padrao):
+        if cab is None:
+            return padrao
+        for j, h in enumerate(cab):
+            if all(t in h for t in termos):
+                return j
+        return padrao
+
+    mapa = {
+        "bp": achar(("business", "partner"), 0),
+        "cliente": achar(("emitida", "para"), 1),
+        "solicitado_por": achar(("solicitado", "por"), 2),
+        "nf": achar(("nota",), 3),
+        "itens": achar(("itens",), 4),
+        "data_saida": achar(("data", "saida"), 5),
+        "prev_retorno": achar(("previsao", "retorno"), 6),
+        "emissao_tipo": achar(("emissao",), 7),
+        "retorno_data": achar(("retorno",), 8),
+        "nota_retorno": achar(("nota", "retorno"), 9),
+        "status_prazo": achar(("status", "prazo"), 10),
+        "retorno_atraso": achar(("retorno", "atraso"), 11),
+        "custo": achar(("custo",), 12),
+        "observacao": achar(("observac",), 13),
+    }
+
+    linhas = val_demo[ini:]
+    df = pd.DataFrame({k: [(l[j].strip() if j is not None and j < len(l) else "") for l in linhas]
+                       for k, j in mapa.items()})
+    
+    df = df[(df["cliente"] != "") | (df["nf"] != "")].copy()
+    
+    hoje = pd.Timestamp.today().normalize()
+    df["d_saida"] = para_data(df["data_saida"])
+    df["d_prev"] = para_data(df["prev_retorno"])
+    df["d_retorno"] = para_data(df["retorno_data"])
+    
+    df["finalizado"] = (df["status_prazo"].str.lower() == "finalizado") | (df["d_retorno"].notna())
+    df["dias_para_vencer"] = (df["d_prev"].dt.normalize() - hoje).dt.days
+    df["dias_atraso"] = (hoje - df["d_prev"].dt.normalize()).dt.days
+    
+    def calcula_status_fup(r):
+        if r["finalizado"]:
+            return "🟢 Finalizado"
+        if pd.isna(r["d_prev"]):
+            return "⚪ Sem Previsão"
+        if r["dias_atraso"] > 0:
+            return "🔴 Retorno Urgente"
+        if r["dias_para_vencer"] <= 7:
+            return "🟡 Vence esta Semana"
+        return "🔵 No Prazo"
+        
+    df["status_fup"] = df.apply(calcula_status_fup, axis=1)
+    return df
 
 
 def df_conserto(valores):
@@ -694,6 +758,21 @@ tr:hover td{background:#f1f5f9}
     color: #0369a1;
     border-color: #bae6fd;
 }
+.status-pill.urgente{
+    background: #fee2e2;
+    color: #991b1b;
+    border-color: #fca5a5;
+}
+.status-pill.semana{
+    background: #fef3c7;
+    color: #92400e;
+    border-color: #fde68a;
+}
+.status-pill.ok{
+    background: #dcfce7;
+    color: #166534;
+    border-color: #86efac;
+}
 """
 
 _JS_TAB_PEND = """
@@ -826,7 +905,78 @@ def html_tabela_pendentes(df):
             f'<script>{js}</script></body></html>')
 
 
-ABAS_RESTRITAS = {"pendentes", "dashboard"}
+ABAS_RESTRITAS = {"pendentes", "dashboard", "demonstracao"}
+
+def html_tabela_demonstracao(df):
+    cols = [
+        ("N.F.", "nf", "t"),
+        ("Cliente", "cliente", "t"),
+        ("Solicitado Por", "solicitado_por", "t"),
+        ("Data Saída", "d_saida", "d"),
+        ("Prev. Retorno", "d_prev", "d"),
+        ("Status FUP", "status_fup", "t"),
+        ("Retorno (Data)", "d_retorno", "d"),
+        ("NF Retorno", "nota_retorno", "t"),
+        ("Observação", "observacao", "t")
+    ]
+    regs = df.to_dict("records")
+
+    def texto(r, k):
+        v = r[k]
+        if v is None or (isinstance(v, float) and pd.isna(v)) or str(v).strip() == "":
+            return "-"
+        if k in ("d_saida", "d_prev", "d_retorno") and pd.notna(v):
+            return pd.to_datetime(v).strftime("%d/%m/%Y")
+        return str(v)
+
+    def chave(r, k, tipo):
+        if tipo == "d":
+            d = para_data(r[k])
+            return "" if pd.isna(d) else str(d.toordinal())
+        return _norm(texto(r, k))
+
+    th = "".join(f'<th data-col data-t="{t}">{n}<i></i></th>' for n, _, t in cols)
+    
+    fl = ""
+    for n, k, t in cols:
+        vals = sorted({texto(r, k) for r in regs}, key=_norm)
+        if t == "t" and len(vals) <= 25:
+            ops = '<option value="">Todos</option>' + "".join(f'<option value="{esc(v.lower())}">{esc(v)}</option>' for v in vals)
+            fl += f'<td><select data-f>{ops}</select></td>'
+        else:
+            fl += '<td><input data-f type="text" placeholder="Filtrar..."></td>'
+            
+    linhas = ""
+    for r in regs:
+        st_fup = r["status_fup"]
+        borda_esquerda = "#e53935" if "Retorno Urgente" in st_fup else ("#f5b301" if "Vence esta Semana" in st_fup else ("#2fae6e" if "Finalizado" in st_fup else "#cbd5e1"))
+        
+        tds = ""
+        for _, k, t in cols:
+            val_txt = texto(r, k)
+            val_chave = chave(r, k, t)
+            
+            if k == "status_fup":
+                extra_cls = "urgente" if "Retorno Urgente" in val_txt else ("semana" if "Vence esta Semana" in val_txt else ("ok" if "Finalizado" in val_txt else "aguardando"))
+                conteudo = f'<span class="status-pill {extra_cls}">{esc(val_txt)}</span>'
+                tds += f'<td data-v="{esc(val_chave)}">{conteudo}</td>'
+            else:
+                tds += f'<td data-v="{esc(val_chave)}">{esc(val_txt)}</td>'
+                
+        linhas += f'<tr style="border-left: 5px solid {borda_esquerda};">{tds}</tr>'
+        
+    js = _JS_TAB_PEND.replace("__DIAS__", str([c[1] for c in cols].index("d_prev")))
+    
+    return (f'<!DOCTYPE html><html><head><meta charset="utf-8"><style>{_CSS_TAB_PEND}</style></head><body>'
+            f'<div class="table-container">'
+            f'<div class="table-header-bar"><button id="toggleFilters" class="filter-toggle-btn">🔍 Filtrar Tabela</button>'
+            f'<span class="record-count" id="cnt"></span><button id="lp" style="background:#e2e8f0;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:#334155;font-weight:600">Limpar Filtros</button></div>'
+            f'<div class="tb-wrapper"><table id="t"><thead>'
+            f'<tr>{th}</tr>'
+            f'<tr class="filter-row" id="filterRow">{fl}</tr>'
+            f'</thead><tbody>{linhas}</tbody></table></div></div>'
+            f'<script>{js}</script></body></html>')
+
 
 
 def verifica_senha(informada, cfg):
@@ -854,6 +1004,11 @@ try:
     todos_dados = ler_valores(NOME_DA_ABA)
     linhas_pedidos = [l for l in todos_dados[1:] if any(l)]
     pend = df_pendentes(ler_valores(ABA_PENDENTES))
+    try:
+        val_demo = ler_valores(ABA_DEMONSTRACAO)
+        demo_df = df_demonstracao(val_demo, todos_dados)
+    except Exception:
+        demo_df = pd.DataFrame()
 except Exception as e:
     st.error(f"Erro ao conectar com a planilha: {e}")
     st.stop()
@@ -875,12 +1030,14 @@ if erro_login:
 nomes_completos_todos = {
     "consulta": "🔎 Consulta Saída",
     "pendentes": "⏳ Pendentes de coleta",
+    "demonstracao": "🔄 Demonstrações (FUP)",
     "conserto": "🔧 Conserto/Reparo",
     "dashboard": "📊 Dashboard"
 }
 icones_apenas_todos = {
     "consulta": "🔎",
     "pendentes": "⏳",
+    "demonstracao": "🔄",
     "conserto": "🔧",
     "dashboard": "📊"
 }
@@ -888,6 +1045,8 @@ icones_apenas_todos = {
 chaves = ["consulta"]
 if "pendentes" in permitidas:
     chaves.append("pendentes")
+if "demonstracao" in permitidas:
+    chaves.append("demonstracao")
 chaves.append("conserto")
 if "dashboard" in permitidas:
     chaves.append("dashboard")
@@ -980,6 +1139,7 @@ if pagina not in chaves:
 PAGINAS = {
     "consulta": ("Onde está o pedido.", "Portal Logístico de Rastreamento de Pedidos em Tempo Real."),
     "pendentes": ("Pendentes de coleta.", "Acompanhe e gerencie a lista de coletas pendentes."),
+    "demonstracao": ("Controle de Demonstrações.", "Gestão contínua de prazos e follow-up de materiais em demonstração."),
     "conserto": ("Conserto / Reparo.", "Verifique o andamento de notas e peças em manutenção."),
     "dashboard": ("Visão Geral.", "Métricas de lead time, volume faturado e gargalos de expedição."),
 }
@@ -1048,6 +1208,51 @@ if pagina == "pendentes":
         with cols_dl[1]:
             st.download_button("⬇️ Baixar Relatório em CSV", v[["NF", "Cliente", "Frete", "Transporte", "Ordem de coleta", "Data Solicitação", "Dias pendente", "Status"]].to_csv(index=False).encode("utf-8-sig"),
                                "pendentes_coleta.csv", "text/csv", use_container_width=True)
+
+
+# ================= 3. DEMONSTRAÇÕES (FUP) =================
+if pagina == "demonstracao":
+    with st.container():
+        if demo_df.empty:
+            st.warning(f"Não foi possível ler os dados da aba '{ABA_DEMONSTRACAO}' ou a aba está vazia.")
+        else:
+            tot_abertos = len(demo_df[~demo_df["finalizado"]])
+            tot_urgentes = len(demo_df[demo_df["status_fup"] == "🔴 Retorno Urgente"])
+            tot_semana = len(demo_df[demo_df["status_fup"] == "🟡 Vence esta Semana"])
+            tot_fin = len(demo_df[demo_df["finalizado"]])
+
+            st.markdown(f"""
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;">
+                <div style="background:#fff;border-radius:16px;padding:16px;box-shadow:0 4px 12px rgba(59,113,159,.1);border-top:5px solid #3b719f;">
+                    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Em Aberto (Total)</div>
+                    <div style="font-size:32px;font-weight:800;color:#2c5a82;margin-top:4px;">{tot_abertos}</div>
+                </div>
+                <div style="background:#fff;border-radius:16px;padding:16px;box-shadow:0 4px 12px rgba(59,113,159,.1);border-top:5px solid #e53935;">
+                    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">🚨 Retorno Urgente (Atrasados)</div>
+                    <div style="font-size:32px;font-weight:800;color:#e53935;margin-top:4px;">{tot_urgentes}</div>
+                </div>
+                <div style="background:#fff;border-radius:16px;padding:16px;box-shadow:0 4px 12px rgba(59,113,159,.1);border-top:5px solid #f5b301;">
+                    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">⚠️ Vence esta Semana</div>
+                    <div style="font-size:32px;font-weight:800;color:#b45309;margin-top:4px;">{tot_semana}</div>
+                </div>
+                <div style="background:#fff;border-radius:16px;padding:16px;box-shadow:0 4px 12px rgba(59,113,159,.1);border-top:5px solid #2fae6e;">
+                    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">🟢 Finalizados</div>
+                    <div style="font-size:32px;font-weight:800;color:#1e8e5a;margin-top:4px;">{tot_fin}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            inc_fin = st.toggle("Incluir demonstrações finalizadas", value=False)
+            df_exibir = demo_df if inc_fin else demo_df[~demo_df["finalizado"]]
+
+            st.caption("Clique no título de uma coluna para ordenar · utilize o botão **Filtrar Tabela** para buscas avançadas · vermelho: Retorno Urgente · amarelo: Vence nos próximos 7 dias")
+            components.html(html_tabela_demonstracao(df_exibir), height=660, scrolling=False)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            cols_dl = st.columns([1, 4, 1])
+            with cols_dl[1]:
+                st.download_button("⬇️ Baixar Relatório de Demonstrações em CSV", df_exibir.to_csv(index=False).encode("utf-8-sig"),
+                                   "demonstracoes_fup.csv", "text/csv", use_container_width=True)
 
 # ================= 3. DASHBOARD =================
 _uid = count(1)
