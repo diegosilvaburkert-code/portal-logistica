@@ -223,10 +223,14 @@ def _norm(t):
 
 
 def df_demonstracao(val_demo, val_ctrl):
+    if not val_demo or len(val_demo) < 2:
+        return pd.DataFrame()
+    
     ini, cab = 2, None
     for i, l in enumerate(val_demo[:8]):
-        if any("business partner" in _norm(c) or "emitida para" in _norm(c) for c in l):
-            ini, cab = i + 1, [_norm(c) for c in l]
+        norm_l = [_norm(c) for c in l]
+        if any("business partner" in c or "emitida para" in c or "nota" in c for c in norm_l):
+            ini, cab = i + 1, norm_l
             break
 
     def achar(termos, padrao):
@@ -265,21 +269,37 @@ def df_demonstracao(val_demo, val_ctrl):
     df["d_prev"] = para_data(df["prev_retorno"])
     df["d_retorno"] = para_data(df["retorno_data"])
     
-    df["finalizado"] = (df["status_prazo"].str.lower() == "finalizado") | (df["d_retorno"].notna())
-    df["dias_para_vencer"] = (df["d_prev"].dt.normalize() - hoje).dt.days
-    df["dias_atraso"] = (hoje - df["d_prev"].dt.normalize()).dt.days
+    # Verificação estrita de finalização: 
+    # Se Nota de Retorno ou Data de Retorno estiver preenchida, ou se Status Prazo for Finalizado.
+    df["finalizado"] = (
+        (df["status_prazo"].str.lower() == "finalizado") | 
+        (df["d_retorno"].notna()) | 
+        (df["nota_retorno"].str.strip() != "")
+    )
     
     def calcula_status_fup(r):
         if r["finalizado"]:
             return "🟢 Finalizado"
-        if pd.isna(r["d_prev"]):
-            return "⚪ Sem Previsão"
-        if r["dias_atraso"] > 0:
-            return "🔴 Retorno Urgente"
-        if r["dias_para_vencer"] <= 7:
-            return "🟡 Vence esta Semana"
-        return "🔵 No Prazo"
         
+        if pd.isna(r["d_saida"]):
+            return "⚪ Sem Data Saída"
+            
+        dias_corridos = (hoje - r["d_saida"].normalize()).days
+        
+        # Regra de Prazos de Demonstração:
+        # - Máximo 60 dias
+        # - 30 dias: 1º FUP
+        # - 45 dias: 2º FUP
+        # - > 60 dias: Atrasado (Retorno Urgente)
+        if dias_corridos > 60:
+            return "🔴 Retorno Urgente"
+        elif dias_corridos >= 45:
+            return "🟡 2º FUP (45 dias)"
+        elif dias_corridos >= 30:
+            return "🟡 1º FUP (30 dias)"
+        else:
+            return "🔵 No Prazo"
+            
     df["status_fup"] = df.apply(calcula_status_fup, axis=1)
     return df
 
