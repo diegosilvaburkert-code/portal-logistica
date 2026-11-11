@@ -516,8 +516,7 @@ def html_detalhes_conserto(r, info):
                linha("Data da coleta", col.get("data_col") or "Ainda não coletada"),
                linha("Transportadora", transp or "Não informada")]))
     h = CSS_CS + hero + fluxo + f'<div class="cs-grid3">{sec}</div>'
-    return "
-".join(l.strip() for l in h.splitlines() if l.strip())
+    return "\n".join(l.strip() for l in h.splitlines() if l.strip())
 
 
 def html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend):
@@ -565,8 +564,7 @@ def html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend):
                linha("Observações", cards["Observações"])]))
 
     h = CSS_CS + hero + fluxo + f'<div class="cs-grid3">{sec}</div>'
-    return "
-".join(l.strip() for l in h.splitlines() if l.strip())
+    return "\n".join(l.strip() for l in h.splitlines() if l.strip())
 
 
 def df_controle(valores):
@@ -1275,8 +1273,7 @@ def montar_dashboard(pend, r2, fat, sel, hoje):
     html_all = (CSS_DASH + f'<div class="pf-grid pf-r1">{k1}{k2}{k3}{k4}</div>'
                 f'<div class="pf-grid pf-r2"><div class="pf-card">{donuts}</div>{grande}</div>'
                 f'<div class="pf-grid pf-r3">{barras}{l1}{l2}</div>')
-    return "
-".join(l.strip() for l in html_all.splitlines() if l.strip())
+    return "\n".join(l.strip() for l in html_all.splitlines() if l.strip())
 
 
 if pagina == "dashboard":
