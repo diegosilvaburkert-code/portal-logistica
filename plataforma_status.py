@@ -296,6 +296,19 @@ def df_demonstracao(val_demo, val_ctrl):
     df["status_fup"] = df.apply(calcula_status_fup, axis=1)
     df["finalizado"] = df["status_fup"] == "🟢 Finalizado"
     
+    # Avaliação de cliente (Positiva / Negativa baseada no retorno vs previsto)
+    def avalia_cliente(r):
+        if pd.notna(r["d_retorno"]) and pd.notna(r["d_prev"]):
+            dias_dif = (r["d_retorno"] - r["d_prev"]).days
+            if dias_dif <= 0:
+                return "🟢 Positivo (No Prazo/Adiantado)"
+            else:
+                return "🔴 Negativo (Devolução Atrasada)"
+        elif not r["finalizado"] and pd.notna(r["d_prev"]) and pd.Timestamp.today().normalize() > r["d_prev"]:
+            return "🔴 Negativo (Vencido em Aberto)"
+        return "⚪ Neutro / Em Andamento"
+
+    df["avaliacao_cliente"] = df.apply(avalia_cliente, axis=1)
     return df
 
 
@@ -928,6 +941,7 @@ def html_tabela_demonstracao(df):
         ("Status FUP", "status_fup", "t"),
         ("Retorno (Data)", "d_retorno", "d"),
         ("NF Retorno", "nota_retorno", "t"),
+        ("Avaliação Cliente", "avaliacao_cliente", "t"),
         ("Observação", "observacao", "t")
     ]
     regs = df.to_dict("records")
@@ -969,6 +983,10 @@ def html_tabela_demonstracao(df):
             
             if k == "status_fup":
                 extra_cls = "urgente" if "Retorno Urgente" in val_txt else ("ok" if "Finalizado" in val_txt else "aguardando")
+                conteudo = f'<span class="status-pill {extra_cls}">{esc(val_txt)}</span>'
+                tds += f'<td data-v="{esc(val_chave)}">{conteudo}</td>'
+            elif k == "avaliacao_cliente":
+                extra_cls = "urgente" if "Negativo" in val_txt else ("ok" if "Positivo" in val_txt else "aguardando")
                 conteudo = f'<span class="status-pill {extra_cls}">{esc(val_txt)}</span>'
                 tds += f'<td data-v="{esc(val_chave)}">{conteudo}</td>'
             else:
@@ -1151,7 +1169,7 @@ PAGINAS = {
     "pendentes": ("Pendentes de coleta.", "Acompanhe e gerencie a lista de coletas pendentes."),
     "demonstracao": ("Controle de Demonstrações.", "Gestão contínua de prazos e follow-up de materiais em demonstração."),
     "conserto": ("Conserto / Reparo.", "Verifique o andamento de notas e peças em manutenção."),
-    "dashboard": ("Visão Geral.", "Métricas de lead time, volume faturado e gargalos de expedição."),
+    "dashboard": ("Visão Geral & KPIs.", "Métricas consolidadas de vendas, consertos, demonstrações e lead times."),
 }
 _tit, _sub = PAGINAS.get(pagina, ("Pioneers of Flow.", ""))
 st.markdown(f"""
@@ -1230,7 +1248,6 @@ if pagina == "demonstracao":
             tot_urgentes = len(demo_df[demo_df["status_fup"] == "🔴 Retorno Urgente"])
             tot_fin = len(demo_df[demo_df["finalizado"]])
 
-            # BANNER DE ALERTA DE RETORNO URGENTE COM DESTAQUE
             if tot_urgentes > 0:
                 st.markdown(f"""
                 <div class="fup-urgent-banner">
@@ -1280,7 +1297,7 @@ if pagina == "demonstracao":
                 st.download_button("⬇️ Baixar Relatório de Demonstrações em CSV", df_exibir.to_csv(index=False).encode("utf-8-sig"),
                                    "demonstracoes_fup.csv", "text/csv", use_container_width=True)
 
-# ================= 4. DASHBOARD =================
+# ================= 4. DASHBOARD MODULAR COM SEÇÕES E MODO TELA CHEIA =================
 _uid = count(1)
 MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 CSS_DASH = """<style>
@@ -1433,80 +1450,6 @@ def dados_faturadas(valores, hoje):
     return fat
 
 
-def montar_dashboard(pend, r2, fat, sel, hoje):
-    total = len(pend)
-    atras = int(pend["Atrasado"].sum())
-    conc = r2[r2["coletado"]]
-
-    media = conc["dias"].mean() if len(conc) else None
-    serie = conc.groupby(conc["coleta"].dt.to_period("M"))["dias"].mean().tail(8).tolist()
-    k1 = (f'<div class="pf-card"><div class="pf-t">Liberação → Coleta</div>'
-          f'<div class="pf-v">{_fmt1(media) + " dias" if media is not None else "—"}</div>'
-          f'<div class="pf-s">Média de dias entre a emissão da NF de retorno e a coleta</div>{_spark(serie)}</div>')
-
-    if sel is not None:
-        mes = fat[fat["mes"] == sel]
-        ult = hoje.day if sel == hoje.to_period("M") else sel.days_in_month
-        diario = mes.groupby(mes["Data Solic."].dt.day).size().reindex(range(1, ult + 1), fill_value=0).tolist()
-        qtd = len(mes)
-        rot_mes = _nome_mes(sel)
-    else:
-        diario, qtd, rot_mes = [], 0, "—"
-    k2 = (f'<div class="pf-card"><div class="pf-t">Notas faturadas no mês</div><div class="pf-v">{qtd}</div>'
-          f'<div class="pf-s">{rot_mes} · por dia</div>{_spark(diario)}</div>')
-
-    fc = fat[~fat["Cliente"].isin(["", "-"])]
-    rank = fc.groupby("Cliente").size().sort_values(ascending=False).head(5)
-    if len(rank):
-        top_n, top_q = rank.index[0], int(rank.iloc[0])
-    else:
-        top_n, top_q = "—", 0
-    k3 = (f'<div class="pf-card"><div class="pf-t">Maior reincidência</div><div class="pf-v">{top_q}x</div>'
-          f'<div class="pf-s" style="font-weight:600;color:#1f3a57">{esc(top_n)}</div>'
-          f'<div class="pf-s">Vezes faturadas para o mesmo cliente</div></div>')
-
-    k4 = (f'<div class="pf-card pf-blue"><div class="pf-t">Pendentes de coleta</div>'
-          f'<div class="pf-duo"><div><b>{total}</b><span>Total</span></div>'
-          f'<div><b>{atras}</b><span>Atrasados (&gt; {PRAZO_ALERTA} dias)</span></div></div></div>')
-
-    pct_atr = atras / total * 100 if total else 0
-    pct_col = len(conc) / len(r2) * 100 if len(r2) else 0
-    donuts = (_donut(pct_atr, "Pendentes de coleta em atraso")
-              + _donut(pct_col, "NFs de retorno já coletadas", "#6d8fb6", "#3b719f"))
-
-    if sel is not None:
-        per = pd.period_range(end=sel, periods=12, freq="M")
-        cont = fat.groupby("mes").size().reindex(per, fill_value=0)
-        linha = _linha([f"{MESES[p.month - 1]}/{str(p.year)[2:]}" for p in per], cont.tolist())
-        media_m = cont.mean()
-    else:
-        linha, media_m = "", 0
-    grande = (f'<div class="pf-card"><div class="pf-t">Notas faturadas · últimos 12 meses</div>'
-              f'<div class="pf-big"><div style="flex:1;min-width:0">{linha}</div><div class="side">'
-              f'<span>Mês selecionado</span><b>{qtd}</b>'
-              f'<span style="margin-top:14px">Média mensal</span><b>{_fmt1(media_m)}</b></div></div></div>')
-
-    ordem = ["Hoje", "1-2 dias", "3-5 dias", "6-10 dias", "+10 dias"]
-    fx = pend["Faixa"].astype(str).value_counts().reindex(ordem, fill_value=0)
-    barras = (f'<div class="pf-card"><div class="pf-t">Idade dos pendentes</div>'
-              f'<div class="pf-s">Casos pendentes por faixa de prazo</div>{_barras(ordem, fx.tolist())}</div>')
-
-    afet = (r2.groupby("Cliente")["dias"].mean().sort_values(ascending=False).head(5))
-    afet_l = [(c, v) for c, v in afet.items() if c]
-    l1 = (f'<div class="pf-card"><div class="pf-t">Clientes mais afetados por prazos longos</div>'
-          f'<div class="pf-s">Média de dias da liberação até a coleta (inclui casos ainda aguardando, contados até hoje)</div>'
-          f'{_lista(afet_l, lambda v: f"{v:.0f} dias")}</div>')
-
-    l2 = (f'<div class="pf-card"><div class="pf-t">Maior reincidência de clientes</div>'
-          f'<div class="pf-s">Quantidade de vezes faturadas por cliente (histórico completo)</div>'
-          f'{_lista([(c, int(v)) for c, v in rank.items()], lambda v: f"{v}x")}</div>')
-
-    html_all = (CSS_DASH + f'<div class="pf-grid pf-r1">{k1}{k2}{k3}{k4}</div>'
-                f'<div class="pf-grid pf-r2"><div class="pf-card">{donuts}</div>{grande}</div>'
-                f'<div class="pf-grid pf-r3">{barras}{l1}{l2}</div>')
-    return "\n".join(l.strip() for l in html_all.splitlines() if l.strip())
-
-
 if pagina == "dashboard":
     with st.container():
         hoje = pd.Timestamp.today().normalize()
@@ -1514,60 +1457,270 @@ if pagina == "dashboard":
             rep_d = df_conserto(ler_valores(ABA_CONSERTO))
         except Exception:
             rep_d = None
-            st.warning(f"Não consegui ler a aba '{ABA_CONSERTO}'; os indicadores de conserto ficam vazios.")
         r2 = sem_ignorados(dados_conserto(rep_d, mapa_coletas(todos_dados), hoje))
         fat = sem_ignorados(dados_faturadas(todos_dados, hoje))
         pend_d = sem_ignorados(pend)
 
-        meses = sorted(fat["mes"].dropna().unique(), reverse=True)
-        sel = None
-        if meses:
-            atual = hoje.to_period("M")
-            _, cs, _ = st.columns([2, 1, 2])
-            sel = cs.selectbox("Mês de referência (notas faturadas)", meses,
-                               index=meses.index(atual) if atual in meses else 0, format_func=_nome_mes)
-        st.markdown(montar_dashboard(pend_d, r2, fat, sel, hoje), unsafe_allow_html=True)
+        # SELETOR DE SEÇÃO DE ANÁLISE
+        st.markdown("### 🎛️ Painel de Controle e Seções de Análise")
+        secao_analise = st.selectbox(
+            "Selecione a seção de KPIs que deseja analisar:",
+            [
+                "📊 Vendas & Faturamento (Geral)",
+                "🔧 Conserto & Reparo",
+                "🔄 Demonstrações & Avaliação de Clientes",
+                "⏳ Prazos Acima do Comum & Gargalos",
+                "🔍 Modo Tela Cheia (Análise Individual de KPI)"
+            ],
+            key="secao_dashboard_sel"
+        )
+        st.markdown("---")
 
-# ================= 4. CONSERTO / REPARO =================
-if pagina == "conserto":
-    try:
-        rep = df_conserto(ler_valores(ABA_CONSERTO))
-    except Exception as e:
-        st.error(f"Não consegui ler a aba '{ABA_CONSERTO}'. Confira o nome da aba na planilha.")
-        st.caption(str(e))
-        st.stop()
-
-    r_sel = None
-    _, mid4, _ = st.columns([1, 2, 1])
-    with mid4:
-        st.write("Digite o número da Nota Fiscal do cliente para acompanhar o conserto/reparo.")
-        q = st.text_input("Número da Nota Fiscal (conserto):", placeholder="Ex: 295889-1 ou 295889...",
-                          key="nf_conserto").strip()
-
-        if q:
-            base = rep["Nota cliente"].str.split("-").str[0]
-            achou = rep[(rep["Nota cliente"] == q) | (base == q) | (rep["NF retorno"] == q)]
-            if achou.empty:
-                st.markdown(
-                    '<div style="background:#fff4e5;border:2px solid #f5a623;border-radius:12px;padding:26px 20px;'
-                    'text-align:center;box-shadow:0 4px 12px rgba(245,166,35,.18);margin-top:10px">'
-                    '<div style="font-size:38px;line-height:1">⚠️</div>'
-                    '<div style="font-size:24px;font-weight:800;color:#b45309;margin-top:8px">'
-                    'Nota Fiscal NÃO recebida em nossa Expedição</div>'
-                    '<div style="font-size:16px;color:#5c6b73;margin-top:8px">'
-                    'ou número incluído incorretamente</div>'
-                    f'<div style="font-size:13px;color:#8a97ab;margin-top:12px">Número pesquisado: <b>{esc(q)}</b></div>'
-                    '</div>', unsafe_allow_html=True)
+        # ---------------- 1. SEÇÃO DE VENDAS & FATURAMENTO ----------------
+        if "Vendas" in secao_analise:
+            st.markdown("#### 📊 Análise de Vendas e Faturamento")
+            
+            # Filtro flexível: Mês específico, Múltiplos meses ou Ano Inteiro
+            tipo_filtro_vendas = st.radio("Filtro temporal para as métricas de vendas:", ["Mês Específico", "Ano Inteiro (Acumulado)"], horizontal=True)
+            
+            meses_disp = sorted(fat["mes"].dropna().unique(), reverse=True)
+            sel_mes = None
+            sel_ano = str(hoje.year)
+            
+            if tipo_filtro_vendas == "Mês Específico":
+                if meses_disp:
+                    atual = hoje.to_period("M")
+                    sel_mes = st.selectbox("Selecione o Mês de Referência", meses_disp, index=meses_disp.index(atual) if atual in meses_disp else 0, format_func=_nome_mes)
+                fat_filtrado = fat[fat["mes"] == sel_mes] if sel_mes else fat
             else:
-                if len(achou) > 1:
-                    opcoes = {f"{r['Nota cliente']} — {r['Cliente']}": i for i, r in achou.iterrows()}
-                    escolha = st.selectbox("Mais de um registro encontrado, escolha:", list(opcoes))
-                    r_sel = achou.loc[opcoes[escolha]]
-                else:
-                    r_sel = achou.iloc[0]
+                anos_disp = sorted(list({str(p.year) for p in fat["mes"].dropna().unique()}), reverse=True)
+                sel_ano = st.selectbox("Selecione o Ano", anos_disp)
+                fat_filtrado = fat[fat["mes"].astype(str).str.startswith(sel_ano)]
 
-    if r_sel is not None:
-        info = status_conserto(r_sel, mapa_coletas(todos_dados))
-        st.markdown(html_detalhes_conserto(r_sel, info), unsafe_allow_html=True)
+            # KPIs principais do topo
+            conc = r2[r2["coletado"]]
+            media_lib = conc["dias"].mean() if len(conc) else 0
+            qtd_fat = len(fat_filtrado)
+            
+            fc = fat_filtrado[~fat_filtrado["Cliente"].isin(["", "-"])]
+            rank = fc.groupby("Cliente").size().sort_values(ascending=False)
+            top_n = rank.index[0] if len(rank) else "—"
+            top_q = int(rank.iloc[0]) if len(rank) else 0
+
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.markdown(f"""
+                <div class="pf-card" style="border-top:5px solid #3b719f;">
+                    <div class="pf-t">Liberação → Coleta</div>
+                    <div class="pf-v">{_fmt1(media_lib)} dias</div>
+                    <div class="pf-s">Média geral do período</div>
+                </div>""", unsafe_allow_html=True)
+            with c2:
+                st.markdown(f"""
+                <div class="pf-card" style="border-top:5px solid #3b719f;">
+                    <div class="pf-t">Notas Faturadas</div>
+                    <div class="pf-v">{qtd_fat}</div>
+                    <div class="pf-s">Total no filtro selecionado</div>
+                </div>""", unsafe_allow_html=True)
+            with c3:
+                st.markdown(f"""
+                <div class="pf-card" style="border-top:5px solid #3b719f;">
+                    <div class="pf-t">Maior Reincidência</div>
+                    <div class="pf-v">{top_q}x</div>
+                    <div class="pf-s" style="font-weight:700;color:#2c5a82;">{esc(top_n)}</div>
+                </div>""", unsafe_allow_html=True)
+            with c4:
+                st.markdown(f"""
+                <div class="pf-card pf-blue">
+                    <div class="pf-t">Pendentes de Coleta</div>
+                    <div class="pf-duo">
+                        <div><b>{len(pend_d)}</b><span>Total</span></div>
+                        <div><b>{int(pend_d["Atrasado"].sum())}</b><span>Atrasados</span></div>
+                    </div>
+                </div>""", unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            # Gráfico de tendência de 12 meses
+            per = pd.period_range(end=hoje.to_period("M"), periods=12, freq="M")
+            cont = fat.groupby("mes").size().reindex(per, fill_value=0)
+            linha_svg = _linha([f"{MESES[p.month - 1]}/{str(p.year)[2:]}" for p in per], cont.tolist())
+            
+            st.markdown(f"""
+            <div class="pf-card">
+                <div class="pf-t">Notas Faturadas · Últimos 12 Meses</div>
+                <div style="margin-top:14px;">{linha_svg}</div>
+            </div>""", unsafe_allow_html=True)
+
+        # ---------------- 2. SEÇÃO DE CONSERTO & REPARO ----------------
+        elif "Conserto" in secao_analise:
+            st.markdown("#### 🔧 Métricas de Conserto e Reparo")
+            total_cons = len(rep_d) if rep_d is not None and not rep_d.empty else 0
+            cons_coletados = len(r2[r2["coletado"]]) if not r2.empty else 0
+            media_cons = r2["dias"].mean() if not r2.empty else 0
+
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown(f"""
+                <div class="pf-card" style="border-top:5px solid #6d8fb6;">
+                    <div class="pf-t">Total em Conserto</div>
+                    <div class="pf-v">{total_cons}</div>
+                    <div class="pf-s">Registros na assistência</div>
+                </div>""", unsafe_allow_html=True)
+            with c2:
+                st.markdown(f"""
+                <div class="pf-card" style="border-top:5px solid #2fae6e;">
+                    <div class="pf-t">Consertos Concluídos</div>
+                    <div class="pf-v">{cons_coletados}</div>
+                    <div class="pf-s">Devolvidos com coleta efetuada</div>
+                </div>""", unsafe_allow_html=True)
+            with c3:
+                st.markdown(f"""
+                <div class="pf-card" style="border-top:5px solid #3b719f;">
+                    <div class="pf-t">Tempo Médio de Reparo</div>
+                    <div class="pf-v">{_fmt1(media_cons)} dias</div>
+                    <div class="pf-s">Emissão NF saída → Coleta cliente</div>
+                </div>""", unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            afet = (r2.groupby("Cliente")["dias"].mean().sort_values(ascending=False).head(5))
+            afet_l = [(c, v) for c, v in afet.items() if c]
+            st.markdown(f"""
+            <div class="pf-card">
+                <div class="pf-t">Clientes com Maior Tempo de Ciclo em Conserto</div>
+                <div class="pf-s">Média de dias da liberação até a coleta</div>
+                {_lista(afet_l, lambda v: f"{v:.0f} dias")}
+            </div>""", unsafe_allow_html=True)
+
+        # ---------------- 3. SEÇÃO DE DEMONSTRAÇÕES & AVALIAÇÃO DE CLIENTES ----------------
+        elif "Demonstrações" in secao_analise:
+            st.markdown("#### 🔄 Demonstrações & Avaliação de Desempenho dos Clientes")
+            if demo_df.empty:
+                st.warning("Sem dados de demonstração disponíveis.")
+            else:
+                tot_demo = len(demo_df)
+                fin_demo = len(demo_df[demo_df["finalizado"]])
+                urg_demo = len(demo_df[demo_df["status_fup"] == "🔴 Retorno Urgente"])
+                
+                # Contagem de avaliações de clientes
+                pos_clientes = len(demo_df[demo_df["avaliacao_cliente"].str.contains("Positivo")])
+                neg_clientes = len(demo_df[demo_df["avaliacao_cliente"].str.contains("Negativo")])
+
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    st.markdown(f"""
+                    <div class="pf-card" style="border-top:5px solid #3b719f;">
+                        <div class="pf-t">Total Demonstrações</div>
+                        <div class="pf-v">{tot_demo}</div>
+                        <div class="pf-s">Casos registrados</div>
+                    </div>""", unsafe_allow_html=True)
+                with c2:
+                    st.markdown(f"""
+                    <div class="pf-card" style="border-top:5px solid #e53935;">
+                        <div class="pf-t">Retornos Urgentes</div>
+                        <div class="pf-v">{urg_demo}</div>
+                        <div class="pf-s">Requerem follow-up imediato</div>
+                    </div>""", unsafe_allow_html=True)
+                with c3:
+                    st.markdown(f"""
+                    <div class="pf-card" style="border-top:5px solid #2fae6e;">
+                        <div class="pf-t">🟢 Clientes Avaliados Positivos</div>
+                        <div class="pf-v">{pos_clientes}</div>
+                        <div class="pf-s">Devolução dentro ou antes do prazo</div>
+                    </div>""", unsafe_allow_html=True)
+                with c4:
+                    st.markdown(f"""
+                    <div class="pf-card" style="border-top:5px solid #e53935;">
+                        <div class="pf-t">🔴 Clientes Avaliados Negativos</div>
+                        <div class="pf-v">{neg_clientes}</div>
+                        <div class="pf-s">Devolução em atraso ou vencida</div>
+                    </div>""", unsafe_allow_html=True)
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("##### 📋 Listagem Resumida de Avaliação por Cliente (Demonstração)")
+                
+                # Agrupando por cliente para avaliação geral
+                resumo_cli = demo_df.groupby("cliente").agg(
+                    Total_Casos=("nf", "count"),
+                    Atrasados=("status_fup", lambda x: (x == "🔴 Retorno Urgente").sum()),
+                    Finalizados=("finalizado", "sum")
+                ).reset_index()
+                resumo_cli["Desempenho"] = resumo_cli.apply(lambda r: "🟢 Excelente (Sem Atrasos)" if r["Atrasados"] == 0 else "🔴 Requer Atenção (Com Atrasos)", axis=1)
+                
+                st.dataframe(resumo_cli, use_container_width=True, hide_index=True)
+
+        # ---------------- 4. SEÇÃO DE PRAZOS ACIMA DO COMUM ----------------
+        elif "Prazos Acima" in secao_analise:
+            st.markdown("#### ⏳ Prazos Acima do Comum & Gargalos Logísticos")
+            
+            atrasados_p = pend_d[pend_d["Atrasado"]].copy()
+            st.markdown(f"""
+            <div class="pf-card" style="border-left: 6px solid #e53935; margin-bottom: 16px;">
+                <div class="pf-t">Coletas com Atraso Crítico (> {PRAZO_ALERTA} dias)</div>
+                <div class="pf-v">{len(atrasados_p)} casos</div>
+                <div class="pf-s">Itens aguardando coleta com prazo estourado na expedição</div>
+            </div>""", unsafe_allow_html=True)
+
+            if not atrasados_p.empty:
+                st.dataframe(atrasados_p[["NF", "Cliente", "Frete", "Transporte", "Data Solicitação", "Dias pendente", "Status"]], use_container_width=True, hide_index=True)
+            else:
+                st.success("Nenhum caso com prazo acima do comum no momento na fila de pendentes!")
+
+        # ---------------- 5. MODO TELA CHEIA (ANÁLISE INDIVIDUAL) ----------------
+        else:
+            st.markdown("#### 🔍 Modo Tela Cheia — Análise Individual de KPI")
+            st.write("Selecione um KPI específico abaixo para destacá-lo em tela cheia com profundidade de análise:")
+            
+            kpi_escolhido = st.selectbox(
+                "Escolha o KPI para análise individual:",
+                [
+                    "Média de Liberação até Coleta",
+                    "Volume de Notas Faturadas",
+                    "Cliente com Maior Reincidência",
+                    "Status de Pendentes de Coleta",
+                    "Taxa de Retorno Urgente (Demonstrações)"
+                ]
+            )
+            
+            st.markdown("---")
+            if "Liberação" in kpi_escolhido:
+                st.markdown(f"""
+                <div class="pf-card" style="padding: 40px; text-align: center;">
+                    <div class="pf-t" style="font-size: 16px;">KPI Focado: Média de Liberação → Coleta</div>
+                    <div class="pf-v" style="font-size: 64px; margin: 20px 0;">{_fmt1(r2["dias"].mean() if not r2.empty else 0)} dias</div>
+                    <div class="pf-s" style="font-size: 16px;">Análise detalhada: Este indicador mede a agilidade da transportadora e do cliente após a emissão da nota fiscal de retorno.</div>
+                </div>""", unsafe_allow_html=True)
+            elif "Faturadas" in kpi_escolhido:
+                st.markdown(f"""
+                <div class="pf-card" style="padding: 40px; text-align: center;">
+                    <div class="pf-t" style="font-size: 16px;">KPI Focado: Volume Total Faturado</div>
+                    <div class="pf-v" style="font-size: 64px; margin: 20px 0;">{len(fat)} notas</div>
+                    <div class="pf-s" style="font-size: 16px;">Volume acumulado considerado no período ativo do sistema.</div>
+                </div>""", unsafe_allow_html=True)
+            elif "Reincidência" in kpi_escolhido:
+                fc = fat[~fat["Cliente"].isin(["", "-"])]
+                rank = fc.groupby("Cliente").size().sort_values(ascending=False)
+                top_n = rank.index[0] if len(rank) else "—"
+                top_q = int(rank.iloc[0]) if len(rank) else 0
+                st.markdown(f"""
+                <div class="pf-card" style="padding: 40px; text-align: center;">
+                    <div class="pf-t" style="font-size: 16px;">KPI Focado: Maior Reincidência de Cliente</div>
+                    <div class="pf-v" style="font-size: 64px; margin: 20px 0;">{top_q}x</div>
+                    <div class="pf-s" style="font-size: 18px; font-weight:700; color:#2c5a82;">Cliente: {esc(top_n)}</div>
+                </div>""", unsafe_allow_html=True)
+            elif "Pendentes" in kpi_escolhido:
+                st.markdown(f"""
+                <div class="pf-card" style="padding: 40px; text-align: center; background: linear-gradient(135deg, #3b719f 0%, #2c5a82 100%); color: #fff;">
+                    <div class="pf-t" style="font-size: 16px; color:#e3edfb;">KPI Focado: Status de Pendentes de Coleta</div>
+                    <div class="pf-v" style="font-size: 64px; margin: 20px 0; color: #fff;">{len(pend_d)} itens</div>
+                    <div class="pf-s" style="font-size: 16px; color:#e3edfb;">Destes, {int(pend_d["Atrasado"].sum())} encontram-se com atraso crítico superior a {PRAZO_ALERTA} dias.</div>
+                </div>""", unsafe_allow_html=True)
+            else:
+                urg = len(demo_df[demo_df["status_fup"] == "🔴 Retorno Urgente"]) if not demo_df.empty else 0
+                st.markdown(f"""
+                <div class="pf-card" style="padding: 40px; text-align: center;">
+                    <div class="pf-t" style="font-size: 16px;">KPI Focado: Taxa de Retornos Urgentes em Demonstrações</div>
+                    <div class="pf-v" style="font-size: 64px; margin: 20px 0; color: #e53935;">{urg} casos</div>
+                    <div class="pf-s" style="font-size: 16px;">Casos que exigem follow-up comercial ou logístico imediato.</div>
+                </div>""", unsafe_allow_html=True)
 
 st.markdown("<br><hr><div style='text-align: center; color: #6b7a90; font-size: 13px;'>Pioneers of Flow · Desenvolvido por Diego Elvis</div>", unsafe_allow_html=True)
