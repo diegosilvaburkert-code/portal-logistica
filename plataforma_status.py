@@ -171,6 +171,23 @@ st.markdown(f"""
         [data-testid="stWidgetLabel"] {{ text-align: center !important; display: block !important; width: 100% !important; }}
         [data-testid="stTextInput"] div[data-baseweb="input"] {{ max-width: 560px !important; margin: 0 auto !important; }}
         [data-testid="stTextInput"] input {{ text-align: center !important; }}
+
+        @keyframes pulse-alert {{
+            0% {{ box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.4); }}
+            70% {{ box-shadow: 0 0 0 12px rgba(229, 57, 53, 0); }}
+            100% {{ box-shadow: 0 0 0 0 rgba(229, 57, 53, 0); }}
+        }}
+        .fup-urgent-banner {{
+            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+            border: 2px solid #e53935;
+            border-radius: 16px;
+            padding: 16px 24px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            animation: pulse-alert 2s infinite;
+        }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -221,7 +238,6 @@ def _norm(t):
     return re.sub(r"\s+", " ", t).strip()
 
 
-
 def df_demonstracao(val_demo, val_ctrl):
     if not val_demo or len(val_demo) < 2:
         return pd.DataFrame()
@@ -264,43 +280,22 @@ def df_demonstracao(val_demo, val_ctrl):
     
     df = df[(df["cliente"] != "") | (df["nf"] != "")].copy()
     
-    hoje = pd.Timestamp.today().normalize()
     df["d_saida"] = para_data(df["data_saida"])
     df["d_prev"] = para_data(df["prev_retorno"])
     df["d_retorno"] = para_data(df["retorno_data"])
     
-    # Verificação estrita de finalização: 
-    # Se Nota de Retorno ou Data de Retorno estiver preenchida, ou se Status Prazo for Finalizado.
-    df["finalizado"] = (
-        (df["status_prazo"].str.lower() == "finalizado") | 
-        (df["d_retorno"].notna()) | 
-        (df["nota_retorno"].str.strip() != "")
-    )
-    
     def calcula_status_fup(r):
-        if r["finalizado"]:
+        st_prazo = str(r["status_prazo"]).strip().lower()
+        if "finalizado" in st_prazo:
             return "🟢 Finalizado"
-        
-        if pd.isna(r["d_saida"]):
-            return "⚪ Sem Data Saída"
-            
-        dias_corridos = (hoje - r["d_saida"].normalize()).days
-        
-        # Regra de Prazos de Demonstração:
-        # - Máximo 60 dias
-        # - 30 dias: 1º FUP
-        # - 45 dias: 2º FUP
-        # - > 60 dias: Atrasado (Retorno Urgente)
-        if dias_corridos > 60:
+        elif "retorno urgente" in st_prazo or "atraso" in st_prazo or "atrasou" in st_prazo:
             return "🔴 Retorno Urgente"
-        elif dias_corridos >= 45:
-            return "🟡 2º FUP (45 dias)"
-        elif dias_corridos >= 30:
-            return "🟡 1º FUP (30 dias)"
         else:
             return "🔵 No Prazo"
             
     df["status_fup"] = df.apply(calcula_status_fup, axis=1)
+    df["finalizado"] = df["status_fup"] == "🟢 Finalizado"
+    
     return df
 
 
@@ -692,25 +687,21 @@ def calcular_fluxo_status(linha):
         status_atual = "❌ Pedido Cancelado"
         detalhe_operacional = "Esta Nota Fiscal consta como cancelada no sistema."
     else:
-        # Etapa 2: Faturado / Embalagem (Cliente e NF preenchidos)
         if nf and nf != "None" and nf != "":
             etapa_atingida = 2
             status_atual = "🟡 Embalagem / Faturado"
             detalhe_operacional = f"Nota Fiscal {nf} emitida e cliente preenchido. Aguardando solicitação de coleta."
 
-        # Etapa 3: Coleta Solicitada (Colunas G e H preenchidas)
         if (coleta and coleta != "None" and coleta != "") and (data_solic and data_solic != "None" and data_solic != ""):
             etapa_atingida = 3
             status_atual = "🔵 Coleta Solicitada"
             detalhe_operacional = f"Coleta solicitada em {data_solic} sob o registro/contato: '{coleta}'."
 
-        # Etapa 4: Coleta Efetivada (Coluna I DATA Col. preenchida)
         if data_col and data_col != "None" and data_col != "":
             etapa_atingida = 4
             status_atual = "🟢 Coleta Efetivada"
             detalhe_operacional = f"Material coletado e efetivado em: {data_col}."
         elif (coleta and coleta != "None" and coleta != "") and (data_solic and data_solic != "None" and data_solic != ""):
-            # Se a coleta foi solicitada mas ainda não foi efetivada, a fase 4 fica em andamento
             etapa_atingida = 4
             status_atual = "🔵 Coleta Solicitada — Aguardando Efetivação"
             detalhe_operacional = f"Coleta solicitada. Aguardando a efetivação (preenchimento da data de coleta)."
@@ -969,7 +960,7 @@ def html_tabela_demonstracao(df):
     linhas = ""
     for r in regs:
         st_fup = r["status_fup"]
-        borda_esquerda = "#e53935" if "Retorno Urgente" in st_fup else ("#f5b301" if "Vence esta Semana" in st_fup else ("#2fae6e" if "Finalizado" in st_fup else "#cbd5e1"))
+        borda_esquerda = "#e53935" if "Retorno Urgente" in st_fup else ("#2fae6e" if "Finalizado" in st_fup else "#cbd5e1")
         
         tds = ""
         for _, k, t in cols:
@@ -977,7 +968,7 @@ def html_tabela_demonstracao(df):
             val_chave = chave(r, k, t)
             
             if k == "status_fup":
-                extra_cls = "urgente" if "Retorno Urgente" in val_txt else ("semana" if "Vence esta Semana" in val_txt else ("ok" if "Finalizado" in val_txt else "aguardando"))
+                extra_cls = "urgente" if "Retorno Urgente" in val_txt else ("ok" if "Finalizado" in val_txt else "aguardando")
                 conteudo = f'<span class="status-pill {extra_cls}">{esc(val_txt)}</span>'
                 tds += f'<td data-v="{esc(val_chave)}">{conteudo}</td>'
             else:
@@ -985,7 +976,7 @@ def html_tabela_demonstracao(df):
                 
         linhas += f'<tr style="border-left: 5px solid {borda_esquerda};">{tds}</tr>'
         
-    js = _JS_TAB_PEND.replace("__DIAS__", str([c[1] for c in cols].index("d_prev")))
+    js = _JS_TAB_PEND.replace("__DIAS__", str([c[1] for c in cols].index("status_fup")))
     
     return (f'<!DOCTYPE html><html><head><meta charset="utf-8"><style>{_CSS_TAB_PEND}</style></head><body>'
             f'<div class="table-container">'
@@ -1101,7 +1092,6 @@ with st.sidebar:
 
     st.markdown('<div style="border-bottom:1px solid rgba(255,255,255,.22);margin:16px 0;"></div>', unsafe_allow_html=True)
 
-    # 🔄 BOTÃO DE ATUALIZAÇÃO MANUAL
     if st.button("🔄", use_container_width=True, help="Limpa o cache e busca os dados mais recentes do Google Sheets"):
         st.cache_data.clear()
         st.rerun()
@@ -1238,22 +1228,31 @@ if pagina == "demonstracao":
         else:
             tot_abertos = len(demo_df[~demo_df["finalizado"]])
             tot_urgentes = len(demo_df[demo_df["status_fup"] == "🔴 Retorno Urgente"])
-            tot_semana = len(demo_df[demo_df["status_fup"] == "🟡 Vence esta Semana"])
             tot_fin = len(demo_df[demo_df["finalizado"]])
 
+            # BANNER DE ALERTA DE RETORNO URGENTE COM DESTAQUE
+            if tot_urgentes > 0:
+                st.markdown(f"""
+                <div class="fup-urgent-banner">
+                    <div style="display:flex;align-items:center;gap:16px;">
+                        <span style="font-size:36px;">🚨</span>
+                        <div>
+                            <div style="font-size:16px;font-weight:800;color:#c62828;text-transform:uppercase;">Atenção Necessária — Follow-up Urgente!</div>
+                            <div style="font-size:13.5px;color:#b71c1c;margin-top:2px;">Existem <b>{tot_urgentes}</b> caso(s) de demonstração com Retorno Urgente pendente de resolução na planilha.</div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
             st.markdown(f"""
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;">
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px;">
                 <div style="background:#fff;border-radius:16px;padding:16px;box-shadow:0 4px 12px rgba(59,113,159,.1);border-top:5px solid #3b719f;">
                     <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">Em Aberto (Total)</div>
                     <div style="font-size:32px;font-weight:800;color:#2c5a82;margin-top:4px;">{tot_abertos}</div>
                 </div>
                 <div style="background:#fff;border-radius:16px;padding:16px;box-shadow:0 4px 12px rgba(59,113,159,.1);border-top:5px solid #e53935;">
-                    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">🚨 Retorno Urgente (Atrasados)</div>
+                    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">🚨 Retorno Urgente</div>
                     <div style="font-size:32px;font-weight:800;color:#e53935;margin-top:4px;">{tot_urgentes}</div>
-                </div>
-                <div style="background:#fff;border-radius:16px;padding:16px;box-shadow:0 4px 12px rgba(59,113,159,.1);border-top:5px solid #f5b301;">
-                    <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">⚠️ Vence esta Semana</div>
-                    <div style="font-size:32px;font-weight:800;color:#b45309;margin-top:4px;">{tot_semana}</div>
                 </div>
                 <div style="background:#fff;border-radius:16px;padding:16px;box-shadow:0 4px 12px rgba(59,113,159,.1);border-top:5px solid #2fae6e;">
                     <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;">🟢 Finalizados</div>
@@ -1262,10 +1261,17 @@ if pagina == "demonstracao":
             </div>
             """, unsafe_allow_html=True)
 
-            inc_fin = st.toggle("Incluir demonstrações finalizadas", value=False)
-            df_exibir = demo_df if inc_fin else demo_df[~demo_df["finalizado"]]
+            col_t1, col_t2 = st.columns([2, 1])
+            with col_t1:
+                inc_fin = st.toggle("Incluir demonstrações finalizadas", value=False)
+            with col_t2:
+                apenas_urgentes = st.toggle("🚨 Filtrar apenas Retornos Urgentes", value=False)
 
-            st.caption("Clique no título de uma coluna para ordenar · utilize o botão **Filtrar Tabela** para buscas avançadas · vermelho: Retorno Urgente · amarelo: Vence nos próximos 7 dias")
+            df_exibir = demo_df if inc_fin else demo_df[~demo_df["finalizado"]]
+            if apenas_urgentes:
+                df_exibir = df_exibir[df_exibir["status_fup"] == "🔴 Retorno Urgente"]
+
+            st.caption("Clique no título de uma coluna para ordenar · utilize o botão **Filtrar Tabela** para buscas avançadas")
             components.html(html_tabela_demonstracao(df_exibir), height=660, scrolling=False)
 
             st.markdown("<br>", unsafe_allow_html=True)
@@ -1274,7 +1280,7 @@ if pagina == "demonstracao":
                 st.download_button("⬇️ Baixar Relatório de Demonstrações em CSV", df_exibir.to_csv(index=False).encode("utf-8-sig"),
                                    "demonstracoes_fup.csv", "text/csv", use_container_width=True)
 
-# ================= 3. DASHBOARD =================
+# ================= 4. DASHBOARD =================
 _uid = count(1)
 MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 CSS_DASH = """<style>
