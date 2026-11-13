@@ -702,9 +702,9 @@ def calcular_fluxo_status(linha):
             status_atual = "🟢 Coleta Efetivada"
             detalhe_operacional = f"Material coletado e efetivado em: {data_col}."
         elif (coleta and coleta != "None" and coleta != "") and (data_solic and data_solic != "None" and data_solic != ""):
-            etapa_atingida = 4
+            etapa_atingida = 3
             status_atual = "🔵 Coleta Solicitada — Aguardando Efetivação"
-            detalhe_operacional = f"Coleta solicitada. Aguardando a efetivação (preenchimento da data de coleta)."
+            detalhe_operacional = f"Coleta solicitada em {data_solic} ({coleta}). Aguardando a efetivação (preenchimento da data de coleta)."
 
     return {
         "etapa_atingida": etapa_atingida,
