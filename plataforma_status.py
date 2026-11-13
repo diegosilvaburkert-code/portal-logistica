@@ -481,30 +481,27 @@ def html_timeline(passos, etapa=None):
     return f'<div class="tl-wrap">{segs}{itens}</div>'
 
 
-def html_timeline_pedido(num_etapa, cancelado=False):
+def html_timeline_pedido(tem_nf, tem_coleta_solic, tem_coleta_efet, cancelado=False):
     nomes = ["Em Separação", "Faturado", "Coleta Solicitada", "Coleta Efetivada"]
     n = len(nomes)
     
-    passos = []
-    for i in range(1, n + 1):
-        if cancelado:
-            passos.append("cancelado")
-        elif i < num_etapa:
-            passos.append("ok")
-        elif i == num_etapa:
-            if num_etapa == n:
-                passos.append("ok")
-            else:
-                passos.append("pendente")
-        else:
-            passos.append("pendente")
+    if cancelado:
+        passos = ["cancelado", "cancelado", "cancelado", "cancelado"]
+    elif tem_coleta_efet:
+        passos = ["ok", "ok", "ok", "ok"]
+    elif tem_coleta_solic:
+        passos = ["ok", "ok", "ok", "cur"]
+    elif tem_nf:
+        passos = ["ok", "cur", "pendente", "pendente"]
+    else:
+        passos = ["cur", "pendente", "pendente", "pendente"]
 
     segs = ""
     for k, p in enumerate(passos, start=1):
         if cancelado:
             cor = "#e53935"
         else:
-            cor = COR_TRECHO_CS["ok"] if k < num_etapa or (num_etapa == n and k <= n) else ""
+            cor = COR_TRECHO_CS["ok"] if p == "ok" else ""
         if not cor:
             continue
         ini = 0 if k == 1 else (k - 1.5) / n * 100
@@ -514,7 +511,7 @@ def html_timeline_pedido(num_etapa, cancelado=False):
 
     if cancelado:
         segs = f'<div class="tl-seg" style="left:0%;width:100%;background:#e53935;border-radius:10px"></div>'
-    elif num_etapa == n:
+    elif tem_coleta_efet:
         segs += f'<div class="tl-seg" style="left:{(n - 0.5) / n * 100:.3f}%;width:{0.5 / n * 100:.3f}%;background:{COR_TRECHO_CS["ok"]};border-radius:0 10px 10px 0"></div>'
 
     itens = ""
@@ -524,8 +521,8 @@ def html_timeline_pedido(num_etapa, cancelado=False):
             ic = "✕"
             tag = "Cancelado"
         else:
-            is_ok = p == "ok"
-            is_cur = (i == num_etapa and num_etapa < n)
+            is_ok = (p == "ok")
+            is_cur = (p == "cur")
             cls = "ok" if is_ok else ("cur" if is_cur else "")
             ic = "✓" if is_ok else ""
             tag = "Em andamento" if is_cur else ("Concluído" if is_ok else "")
@@ -617,7 +614,7 @@ def html_detalhes_pedido_layout(cards, data_col_pedido, info, r_pend):
             f'<div style="font-size:14px;color:#5c6b73;margin-top:6px">{esc(det)}</div>{aviso_pend}</div></div>')
 
     fluxo = (f'<div class="cs-card"><div class="cs-k">Fluxo do Processo</div>'
-             f'{html_timeline_pedido(info["etapa_atingida"], info["cancelado"])}</div>')
+             f'{html_timeline_pedido(info["tem_nf"], info["tem_coleta_solic"], info["tem_coleta_efet"], info["cancelado"])}</div>')
 
     def linha(rot, valor, pill=""):
         v = str(valor).strip()
@@ -679,38 +676,34 @@ def calcular_fluxo_status(linha):
     transportador_valido = transportador and transportador != "-"
     cancelado = "cancelada" in operacao.lower()
 
-    etapa_atingida = 1 
     status_atual = "🟠 Em Separação"
     detalhe_operacional = f"Pedido em separação técnica. Responsável pela ação: {responsavel if responsavel else 'Não informado'}."
+
+    tem_nf = bool(nf and nf != "None" and nf != "")
+    tem_coleta_solic = bool((coleta and coleta != "None" and coleta != "") and (data_solic and data_solic != "None" and data_solic != ""))
+    tem_coleta_efet = bool(data_col and data_col != "None" and data_col != "")
 
     if cancelado:
         status_atual = "❌ Pedido Cancelado"
         detalhe_operacional = "Esta Nota Fiscal consta como cancelada no sistema."
     else:
-        if nf and nf != "None" and nf != "":
-            etapa_atingida = 2
+        if tem_coleta_efet:
+            status_atual = "🟢 Coleta Efetivada"
+            detalhe_operacional = f"Material coletado e efetivado em: {data_col}."
+        elif tem_coleta_solic:
+            status_atual = "🔵 Coleta Solicitada — Aguardando Efetivação"
+            detalhe_operacional = f"Coleta solicitada em {data_solic} ({coleta}). Aguardando a efetivação (preenchimento da data de coleta)."
+        elif tem_nf:
             status_atual = "🟡 Embalagem / Faturado"
             detalhe_operacional = f"Nota Fiscal {nf} emitida e cliente preenchido. Aguardando solicitação de coleta."
 
-        if (coleta and coleta != "None" and coleta != "") and (data_solic and data_solic != "None" and data_solic != ""):
-            etapa_atingida = 3
-            status_atual = "🔵 Coleta Solicitada"
-            detalhe_operacional = f"Coleta solicitada em {data_solic} sob o registro/contato: '{coleta}'."
-
-        if data_col and data_col != "None" and data_col != "":
-            etapa_atingida = 4
-            status_atual = "🟢 Coleta Efetivada"
-            detalhe_operacional = f"Material coletado e efetivado em: {data_col}."
-        elif (coleta and coleta != "None" and coleta != "") and (data_solic and data_solic != "None" and data_solic != ""):
-            etapa_atingida = 3
-            status_atual = "🔵 Coleta Solicitada — Aguardando Efetivação"
-            detalhe_operacional = f"Coleta solicitada em {data_solic} ({coleta}). Aguardando a efetivação (preenchimento da data de coleta)."
-
     return {
-        "etapa_atingida": etapa_atingida,
         "status_atual": status_atual,
         "detalhe": detalhe_operacional,
         "cancelado": cancelado,
+        "tem_nf": tem_nf,
+        "tem_coleta_solic": tem_coleta_solic,
+        "tem_coleta_efet": tem_coleta_efet,
         "detalhes_card": {
             "Cliente": cliente if cliente else "—",
             "N.F.": nf if nf else "—",
